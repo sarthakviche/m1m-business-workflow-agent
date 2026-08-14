@@ -1,0 +1,53 @@
+# ============================================================
+# M1M Backend — dev requirements for Windows (no WeasyPrint)
+# Use this file on Windows dev machines:
+#   pip install -r requirements-dev-win.txt
+#
+# For full install (Linux/Docker), use requirements.txt
+# ============================================================
+
+# Web framework
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+
+# ORM + async DB
+sqlalchemy==2.0.36
+asyncpg==0.30.0
+alembic==1.14.0
+
+# Pydantic (v2)
+pydantic==2.10.3
+pydantic-settings==2.6.1
+
+# Auth / JWT
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# LLM — Gemini
+google-generativeai==0.8.3
+
+# LangGraph
+langgraph==0.2.60
+langchain-core==0.3.28
+langchain-google-genai==2.0.7
+
+# Jinja2 (templates — WeasyPrint excluded on Windows)
+jinja2==3.1.4
+
+# CSV / data validation
+pandas==2.2.3
+openpyxl==3.1.5
+
+# WhatsApp / HTTP
+httpx==0.28.1
+
+# Supabase client
+supabase==2.10.0
+
+# Utilities
+python-multipart==0.0.18
+python-dotenv==1.0.1
+
+# Testing
+pytest==8.3.4
+pytest-asyncio==0.24.0
