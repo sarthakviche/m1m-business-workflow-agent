@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -92,6 +93,10 @@ class Settings(BaseSettings):
     database_url: str
     env: str = "development"
     sprint_tenant_id: str = ""
+
+    # ── Gemini AI (Sprint 1 Step 2+) ──────────────────────────────────────────
+    # Set GEMINI_API_KEY in your .env file.  Never hardcode or log this value.
+    gemini_api_key: Optional[str] = None
 
     model_config = SettingsConfigDict(
         env_file=_find_env_file(),
