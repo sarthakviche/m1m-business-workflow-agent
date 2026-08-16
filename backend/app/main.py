@@ -11,6 +11,7 @@ from fastapi import FastAPI
 # This is required for Alembic autogenerate to discover all tables.
 import app.models  # noqa: F401
 
+from app.api.v1.router import api_v1_router
 from app.config import get_settings
 
 settings = get_settings()
@@ -26,8 +27,12 @@ app = FastAPI(
     redoc_url="/redoc" if settings.env == "development" else None,
 )
 
+# Register API routes
+app.include_router(api_v1_router)
+
 
 @app.get("/health", tags=["system"])
 async def health_check():
     """Liveness check — returns OK if the server is running."""
     return {"status": "ok", "env": settings.env, "version": "0.1.0-sprint1"}
+

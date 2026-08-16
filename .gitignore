@@ -50,9 +50,11 @@ backend/app/db/migrations/__pycache__/
 .DS_Store
 Thumbs.db
 
-# ─── Logs ────────────────────────────────────────────────────────────────────
+# ─── Logs & Generated Documents ──────────────────────────────────────────────
 *.log
 logs/
+backend/generated_docs/
+
 
 # ─── Node (future frontend) ──────────────────────────────────────────────────
 node_modules/
