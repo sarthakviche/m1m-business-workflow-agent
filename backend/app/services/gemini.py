@@ -29,10 +29,10 @@ from google import genai
 from app.config import get_settings
 
 # ─── Default model ────────────────────────────────────────────────────────────
-# gemini-flash-latest: the stable "latest" alias for the Gemini Flash family.
-# It resolves to the most recent Flash model available for your API key tier.
-# Using an alias keeps the code forward-compatible without manual version bumps.
-DEFAULT_MODEL = "gemini-flash-latest"
+# gemini-3.6-flash: verified working for this API key (2026-08-16).
+# gemini-flash-latest → 503 UNAVAILABLE; gemini-2.5-flash → 404 NOT_FOUND.
+# Update this constant when a newer stable model is confirmed available.
+DEFAULT_MODEL = "gemini-3.6-flash"
 
 
 class GeminiKeyMissingError(RuntimeError):
