@@ -6,6 +6,7 @@ Routes (chat, documents, customers, items, webhooks) will be added in Sprint 1 S
 """
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 # Import all models so that SQLAlchemy registers them with Base.metadata.
 # This is required for Alembic autogenerate to discover all tables.
@@ -26,6 +27,20 @@ app = FastAPI(
     version="0.1.0-sprint1",
     docs_url="/docs" if settings.env == "development" else None,
     redoc_url="/redoc" if settings.env == "development" else None,
+)
+
+# CORS — allow the Vite dev server and preview server to call the API.
+# Only localhost origins are listed; no wildcard is used.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",   # Vite dev server
+        "http://127.0.0.1:5173",
+        "http://localhost:4173",   # Vite preview server
+        "http://127.0.0.1:4173",
+    ],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Accept"],
 )
 
 # Register API routes

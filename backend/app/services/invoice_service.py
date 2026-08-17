@@ -220,6 +220,10 @@ async def create_direct_invoice(
         "pdf_url": pdf_url,
         "lines": line_records,
         "response_text": response_text,
+        # Tenant context for frontend document cards
+        "tenant_name": tenant.business_name,
+        "tenant_address": tenant.address,
+        "tenant_gstin": tenant.gstin,
     }
 
 
