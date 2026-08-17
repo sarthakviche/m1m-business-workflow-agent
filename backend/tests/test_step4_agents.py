@@ -457,3 +457,68 @@ async def test_chat_api_endpoint_direct_invoice(db_session):
     finally:
         app.dependency_overrides.clear()
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 6. DOCUMENT SERVING ROUTE TESTS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@pytest.mark.asyncio
+async def test_document_serve_existing_pdf(db_session, tenant_id_uuid):
+    """
+    Verify GET /documents/{tenant_id}/{doc_type}/{filename} returns 200
+    and application/pdf for a document that was just created via the quotation service.
+    """
+    from app.services.quotation_service import create_quotation
+    from app.services.customer_lookup import lookup_customer
+    from app.services.item_lookup import lookup_item
+
+    cust = await lookup_customer(db_session, tenant_id_uuid, "Ramesh Traders")
+    item = await lookup_item(db_session, tenant_id_uuid, "TMT Steel Rod 12mm")
+    assert cust and item
+
+    quote_data = await create_quotation(
+        session=db_session,
+        tenant_id=tenant_id_uuid,
+        customer=cust,
+        items_with_qty=[(item, Decimal("1.00"))],
+    )
+
+    pdf_url = quote_data["pdf_url"]  # e.g. /documents/{tenant_id}/quotations/Q-....pdf
+    assert pdf_url is not None
+
+    async def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db_session] = override_get_db
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            response = await ac.get(pdf_url)
+            assert response.status_code == 200, f"Expected 200, got {response.status_code} for {pdf_url}"
+            assert response.headers["content-type"] == "application/pdf"
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_document_serve_not_found(tenant_id_uuid):
+    """Verify GET /documents/... returns 404 for a non-existent file."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        response = await ac.get(
+            f"/documents/{tenant_id_uuid}/quotations/Q-DOES-NOT-EXIST.pdf"
+        )
+        assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_document_serve_path_traversal_rejected(tenant_id_uuid):
+    """Verify GET /documents/... rejects path traversal attempts with 400."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        response = await ac.get(
+            f"/documents/{tenant_id_uuid}/quotations/..%2F..%2F..%2Fetc%2Fpasswd.pdf"
+        )
+        # FastAPI will either 400 (our guard) or 404 after path normalisation;
+        # in both cases it must NOT return 200.
+        assert response.status_code in (400, 404)

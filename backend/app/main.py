@@ -12,6 +12,7 @@ from fastapi import FastAPI
 import app.models  # noqa: F401
 
 from app.api.v1.router import api_v1_router
+from app.api.v1.documents import router as documents_router
 from app.config import get_settings
 
 settings = get_settings()
@@ -29,6 +30,10 @@ app = FastAPI(
 
 # Register API routes
 app.include_router(api_v1_router)
+
+# Document serving — mounted at root so /documents/{tenant_id}/{doc_type}/{filename}
+# matches the pdf_url returned by pdf_service.py (no /api/v1 prefix).
+app.include_router(documents_router)
 
 
 @app.get("/health", tags=["system"])
