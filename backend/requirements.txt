@@ -5,6 +5,7 @@ uvicorn[standard]>=0.30.0
 # ─── Database / ORM ──────────────────────────────────────────────────────────
 sqlalchemy[asyncio]>=2.0.0
 asyncpg>=0.29.0
+aiosqlite>=0.20.0  # For SQLite async support (local development)
 # greenlet is required by SQLAlchemy's async bridge
 greenlet>=3.0.0
 

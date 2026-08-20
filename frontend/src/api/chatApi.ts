@@ -2,11 +2,22 @@
 
 import type { ChatResponse, DocumentHistoryItem, DocumentListResponse } from "../types/chat";
 
-export async function sendChatMessage(message: string): Promise<ChatResponse> {
+export interface ConversationMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export async function sendChatMessage(
+  message: string,
+  conversationHistory: ConversationMessage[] = []
+): Promise<ChatResponse> {
   const response = await fetch("/api/v1/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ 
+      message,
+      conversation_history: conversationHistory,
+    }),
   });
 
   if (!response.ok) {

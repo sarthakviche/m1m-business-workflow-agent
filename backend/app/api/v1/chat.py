@@ -8,7 +8,7 @@ POST /api/v1/chat
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,8 +31,15 @@ async def get_db_session():
             raise
 
 
+class ConversationMessage(BaseModel):
+    """Message in conversation history."""
+    role: Literal["user", "assistant"]
+    content: str
+
+
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, description="User's natural language business request")
+    conversation_history: List[ConversationMessage] = Field(default_factory=list, description="Previous messages in this conversation")
 
 
 class ChatResponse(BaseModel):
@@ -52,16 +59,35 @@ async def chat_endpoint(
 ) -> ChatResponse:
     """
     Handle natural language quotation, invoice, and conversion requests
-    via the unified LangGraph agent.
+    via the unified LangGraph agent with conversation history context.
     """
     settings = get_settings()
     tenant_id = settings.effective_sprint_tenant_id
+
+    # Build full conversation text from history + current message
+    conversation_lines = []
+    for msg in request.conversation_history:
+        role = "User" if msg.role == "user" else "Assistant"
+        conversation_lines.append(f"{role}: {msg.content}")
+    conversation_lines.append(f"User: {request.message}")
+    full_conversation_text = "\n".join(conversation_lines)
+
+    # Convert history to state format
+    history_for_state = [
+        {
+            "role": msg.role,
+            "content": msg.content,
+        }
+        for msg in request.conversation_history
+    ]
 
     initial_state = {
         "tenant_id": tenant_id,
         "user_id": None,
         "channel": "web",
         "raw_message": request.message,
+        "conversation_history": history_for_state,
+        "full_conversation_text": full_conversation_text,
     }
 
     config = {

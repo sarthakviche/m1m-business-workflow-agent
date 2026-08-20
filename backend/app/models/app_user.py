@@ -42,6 +42,6 @@ class AppUser(Base):
     role: Mapped[str] = mapped_column(Text, nullable=False, default="owner")
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True),
-        server_default=func.now(),
+        server_default=func.current_timestamp(),
         nullable=False,
     )

@@ -3,7 +3,7 @@
 
 import { useState, useCallback } from "react";
 import type { ChatMessage } from "../types/chat";
-import { sendChatMessage, fetchDocuments } from "../api/chatApi";
+import { sendChatMessage, fetchDocuments, type ConversationMessage } from "../api/chatApi";
 
 function makeId() {
   return Math.random().toString(36).slice(2, 10);
@@ -96,7 +96,15 @@ export function useChat() {
     // Flows 3+: Real FastAPI backend calls for quotation, invoice, and all other business logic
 
     try {
-      const response = await sendChatMessage(text);
+      // Build conversation history from all previous messages (excluding welcome, including current user message)
+      const conversationHistory: ConversationMessage[] = messages
+        .filter((msg) => msg.id !== "welcome") // Exclude welcome message
+        .map((msg) => ({
+          role: msg.role,
+          content: msg.text,
+        }));
+
+      const response = await sendChatMessage(text, conversationHistory);
       const assistantMsg: ChatMessage = {
         id: makeId(),
         role: "assistant",

@@ -1,243 +1,393 @@
-# M1M — Munim.ai
+# M1M | Munim.ai
 
-> **Business copilot for Indian SMEs** — Quotation, Invoice, Dues tracking, and Inventory via WhatsApp + Web.
+> A business copilot for Indian small and medium-sized businesses.
 
----
+M1M turns natural-language requests into operational results: quotations, GST-compliant invoices, PDF documents, and document history. The same agent workflow is designed to serve web and WhatsApp channels while keeping business rules and data access in one backend.
 
-## Project Overview
+This repository is an incremental MVP containing the backend, database schema and migrations, deterministic seed data, LangGraph workflows, PDF generation, and a React developer UI.
 
-M1M (Munim.ai) is an AI-powered business assistant that lets Indian SME owners manage their business operations through natural language — either on WhatsApp or a web app. A single agent brain handles quotation generation, GST-compliant invoice generation, dues tracking, and stock checking.
+## Contents
 
-This repository is built incrementally in sprints. **Sprint 1** focuses on proving the core pipeline end-to-end: natural language → backend → agent → correct calculations → PDF.
+- [What M1M Does](#what-m1m-does)
+- [How It Works](#how-it-works)
+- [Repository Layout](#repository-layout)
+- [Technology](#technology)
+- [Requirements](#requirements)
+- [Clone and Install](#clone-and-install)
+- [Configure the Environment](#configure-the-environment)
+- [Choose a Database](#choose-a-database)
+- [Run Migrations and Seed Data](#run-migrations-and-seed-data)
+- [Run the Application](#run-the-application)
+- [API Endpoints](#api-endpoints)
+- [Tests and Verification](#tests-and-verification)
+- [Common Problems](#common-problems)
+- [Project Scope and Limitations](#project-scope-and-limitations)
 
----
+## What M1M Does
 
-## Sprint 1 Scope
+M1M is built around the daily workflow of an Indian SME owner:
 
-### In scope
-1. Database schema + seed data (Step 1 — **current**)
-2. Gemini API smoke test
-3. Deterministic GST calculator
-4. Quotation Agent
-5. Invoice Agent
-6. Minimal developer test UI (chat-style)
-7. PDF generation
-8. WhatsApp Cloud API integration (after internal test UI validates backend)
+1. The user writes a request in natural language, such as asking for a quotation or invoice.
+2. The agent identifies the intent and resolves the customer and items from the database.
+3. Deterministic business logic calculates taxable values and GST.
+4. The application creates the business document and renders a PDF.
+5. The web client displays the response and makes the generated document available for download.
 
-### Out of scope in Sprint 1
-- Onboarding wizard / business signup
-- CSV upload
-- Authentication (OTP, JWT sessions)
-- Dues Agent / Stock Query Agent
-- Full dashboard / customer / inventory dashboards
-- Production customer-facing web app
-- Multi-tenant isolation testing
-- Tally integration
-- Payment gateway, OCR, voice notes, analytics, deployment
+The data model supports tenants, users, customers, items, HSN codes, GST rates, stock, quotations, invoices, payments, conversation logs, Tally connection placeholders, and external ID mappings.
 
-> ⚠️ **Sprint 2+ blocker:** RLS (Row-Level Security) and cross-tenant isolation testing are **intentionally deferred to Sprint 2+**. Before onboarding a second real business, proper multi-tenant isolation and RLS policies must be implemented and tested.
+For GST routing, Maharashtra customers can use CGST + SGST, while customers in another state can use IGST. GST calculation is deterministic and should not depend on an LLM response.
 
----
+## How It Works
 
-## Implementation Status
-
-| Step | Description | Status |
-|------|-------------|--------|
-| **Step 1** | Database schema + Alembic migration + seed script + verification | ✅ Complete |
-| Step 2 | Gemini API smoke test | ⏳ Not started |
-| Step 3 | Deterministic GST calculator | ⏳ Not started |
-| Step 4 | Quotation Agent (LangGraph) | ⏳ Not started |
-| Step 5 | Invoice Agent (LangGraph) | ⏳ Not started |
-| Step 6 | Developer test UI | ⏳ Not started |
-| Step 7 | PDF generation | ⏳ Not started |
-| Step 8 | WhatsApp Cloud API | ⏳ Not started |
-
----
-
-## Local Setup
-
-### Prerequisites
-- Python 3.11+
-- A Supabase project with PostgreSQL (or any PostgreSQL 15+ instance)
-- pip
-
-### 1. Clone and set up environment
-
-```bash
-# Copy the example env file
-cp .env.example .env
-
-# Edit .env and fill in your DATABASE_URL
-# Format: postgresql://user:password@host:5432/dbname
+```mermaid
+flowchart LR
+		U[Business owner] --> W[React web UI]
+		W --> A[FastAPI API]
+		A --> G[LangGraph agent]
+		G --> S[Customer and item lookup]
+		G --> C[GST and document services]
+		S --> D[(SQLite / PostgreSQL / Supabase)]
+		C --> P[Generated PDF]
+		A --> W
+		P --> W
 ```
 
-### 2. Install dependencies
+The backend is the source of truth. The frontend uses Vite's development proxy to forward `/api` and `/documents` requests to FastAPI.
 
-```bash
-pip install -r backend/requirements.txt
+## Repository Layout
+
+```text
+.
+├── backend/
+│   ├── app/
+│   │   ├── agent/          LangGraph state and workflow
+│   │   ├── api/v1/         Chat and document endpoints
+│   │   ├── db/             Async SQLAlchemy session and Alembic migrations
+│   │   ├── models/         Database models
+│   │   └── services/       GST, lookup, numbering, Gemini, and PDF services
+│   ├── scripts/seed.py     Idempotent fictional development data
+│   ├── templates/          Invoice and quotation HTML templates
+│   ├── requirements.txt    Python dependencies
+│   └── alembic.ini         Migration configuration
+├── frontend/
+│   ├── src/                React + TypeScript application
+│   ├── package.json        Node dependencies and scripts
+│   └── vite.config.ts      Dev server and API proxy
+├── generated_docs/         Generated quotation and invoice PDFs
+├── m1m-mvp-prd.md          Product requirements
+├── m1m-mvp-trd.md          Technical requirements
+├── .env.example            Environment variable template
+└── README.md               This guide
 ```
 
-### 3. Run Alembic migration
+## Technology
 
-```bash
-# From the workspace root (m1m/)
-alembic -c backend/alembic.ini upgrade head
+| Area | Technology |
+| --- | --- |
+| Backend API | FastAPI, Uvicorn |
+| Language | Python 3.11+ |
+| Agent orchestration | LangGraph |
+| ORM and database access | SQLAlchemy 2.x async |
+| Database options | SQLite, local PostgreSQL 15+, or Supabase PostgreSQL |
+| Migrations | Alembic |
+| AI provider | Google Gemini API |
+| PDF generation | Jinja2 + WeasyPrint |
+| Frontend | React 19, TypeScript, Vite |
+| Testing | pytest, pytest-asyncio |
+
+## Requirements
+
+Install these on a new PC:
+
+- Git
+- Python 3.11 or newer
+- Node.js and npm (Node.js 20 LTS or newer is recommended)
+- A code editor such as VS Code
+- One database option: SQLite, local PostgreSQL 15+, or a Supabase PostgreSQL project
+- A Gemini API key for Gemini-backed flows and the Gemini smoke test
+
+SQLite is the fastest way to run the project because it requires no database server or Supabase account.
+
+## Clone and Install
+
+Open PowerShell:
+
+```powershell
+git clone <repository-url>
+Set-Location m1m-business-workflow-agent
+
+python --version
+node --version
+npm --version
 ```
 
-This creates all 13 database tables as defined in `m1m-mvp-trd.md`.
+Create and activate the Python virtual environment:
 
-### 4. Seed the database
-
-```bash
-# From the workspace root (m1m/)
-python backend/scripts/seed.py
+```powershell
+python -m venv .venv
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
+.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r backend\requirements.txt
 ```
 
-Seeds 1 test tenant, 8 customers, 12 items, and 12 stock records.
+Install frontend dependencies:
 
-### 5. Run seed again (verify idempotency)
-
-```bash
-python backend/scripts/seed.py
+```powershell
+Set-Location frontend
+npm install
+Set-Location ..
 ```
 
-The second run must report all records as "Existing" — no duplicates.
+Keep the virtual environment activated while running backend commands. Each new PowerShell window must activate it again.
 
-### 6. Run tests
+## Configure the Environment
 
-```bash
-# From backend/ directory
-cd backend
-pytest tests/ -v
+Copy the template in the repository root:
+
+```powershell
+Copy-Item .env.example .env
 ```
 
----
+The root `.env` is automatically discovered by the backend, Alembic, and seed script. Never commit it because it can contain database credentials and API keys.
 
-## Environment Variables
+### Environment variables
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `DATABASE_URL` | ✅ | PostgreSQL connection string. Accepts `postgresql://` or `postgresql+asyncpg://` — the backend normalises it automatically. |
-| `ENV` | No | `development` (default) or `production`. Controls SQL echo and API docs. |
-| `SPRINT_TENANT_ID` | No | UUID for the Sprint 1 test tenant. If empty, falls back to the documented dev UUID `a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11`. |
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `DB_ENVIRONMENT` | No | `sqlite`, `local_postgres`, or `supabase`; defaults to `sqlite` |
+| `DATABASE_URL` | Supabase | PostgreSQL connection URL; also overrides `DB_ENVIRONMENT` when non-empty |
+| `DB_HOST` | Local PostgreSQL | Database host, normally `localhost` |
+| `DB_PORT` | Local PostgreSQL | Database port, normally `5432` |
+| `DB_NAME` | Local PostgreSQL | Database name, normally `m1m_local` |
+| `DB_USER` | Local PostgreSQL | Database user, normally `postgres` |
+| `DB_PASSWORD` | Local PostgreSQL | Database password |
+| `ENV` | No | `development` or `production`; development enables API docs and SQL echo |
+| `SPRINT_TENANT_ID` | No | Tenant UUID used by the Sprint 1 UI and API; otherwise the seeded development UUID is used |
+| `GEMINI_API_KEY` | Gemini flows | API key from Google AI Studio |
 
----
+The backend accepts `postgresql://`, `postgres://`, and `postgresql+asyncpg://` URLs and normalizes PostgreSQL URLs for the async driver.
 
-## Database Schema
+## Choose a Database
 
-13 tables created by the Alembic migration:
+Choose exactly one profile in `.env`. After changing profiles, run migrations and seed data against the newly selected database.
 
-| Table | Description |
-|-------|-------------|
-| `tenant` | Root of the multi-tenant hierarchy |
-| `app_user` | Business staff (auth deferred to Sprint 2+) |
-| `customer` | Customer records with state (for GST routing) |
-| `item` | Product catalog with HSN code and GST rate |
-| `stock` | 1:1 stock level per item |
-| `quotation` | Quotation header |
-| `quotation_line` | Line items on a quotation |
-| `invoice` | GST invoice with CGST/SGST/IGST fields |
-| `invoice_line` | Line items on an invoice |
-| `payment` | Payment transactions against invoices |
-| `conversation_log` | Append-only audit log of all agent interactions |
-| `tally_connection` | Tally integration status (simulated in MVP) |
-| `external_id_map` | Maps M1M entity IDs to external system IDs |
+### Option A: SQLite, no external database setup
 
----
-
-## Seed Data (Sprint 1 test data)
-
-> ⚠️ **All seed data is fictional. Do not use in production.**
-
-**Tenant:** Vaidya Industrial Supplies, Pune, Maharashtra
-
-**Customers (8):**
-- 4 Maharashtra (intra-state → CGST + SGST)
-- 4 inter-state (Gujarat, Karnataka, Telangana, Delhi → IGST)
-
-**Items (12):** Industrial/hardware catalog with GST rates:
-- 5% — Safety helmet
-- 12% — Bearing, cutting disc
-- 18% — Steel, fasteners, electrical, welding (8 items)
-- 28% — Chain pulley block
-
----
-
-## Migration Commands
-
-```bash
-# Apply all pending migrations
-alembic -c backend/alembic.ini upgrade head
-
-# Show current migration status
-alembic -c backend/alembic.ini current
-
-# Show migration history
-alembic -c backend/alembic.ini history
-
-# Downgrade by one step (for rollback)
-alembic -c backend/alembic.ini downgrade -1
+```dotenv
+DB_ENVIRONMENT=sqlite
+DATABASE_URL=
 ```
 
----
+The application creates or uses `m1m.db` in the repository root. No PostgreSQL installation or Supabase project is needed.
 
-## Verification Commands
+### Option B: Local PostgreSQL, without Supabase
 
-After seeding, verify DB state directly in Supabase SQL editor:
+Install PostgreSQL 15 or newer, create a database, and set:
+
+```dotenv
+DB_ENVIRONMENT=local_postgres
+DATABASE_URL=
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=m1m_local
+DB_USER=postgres
+DB_PASSWORD=your_local_postgres_password
+```
+
+For example, create the database with `psql`:
 
 ```sql
--- Core counts
-SELECT 'tenant'   AS tbl, COUNT(*) FROM tenant;
-SELECT 'customer' AS tbl, COUNT(*) FROM customer;
-SELECT 'item'     AS tbl, COUNT(*) FROM item;
-SELECT 'stock'    AS tbl, COUNT(*) FROM stock;
-
--- Every item has exactly one stock row
-SELECT i.name, s.quantity_available
-FROM item i
-JOIN stock s ON s.item_id = i.id
-ORDER BY i.name;
-
--- Customer state distribution
-SELECT state, COUNT(*) AS customer_count
-FROM customer
-GROUP BY state
-ORDER BY customer_count DESC;
-
--- Item GST rate distribution
-SELECT gst_rate_percent, COUNT(*) AS item_count
-FROM item
-GROUP BY gst_rate_percent
-ORDER BY gst_rate_percent;
+CREATE DATABASE m1m_local;
 ```
 
+Leave `DATABASE_URL` empty. A non-empty `DATABASE_URL` always takes priority over the local PostgreSQL settings.
+
+### Option C: Supabase PostgreSQL
+
+Create a Supabase project, open its database connection settings, and copy a PostgreSQL connection string into `.env`:
+
+```dotenv
+DB_ENVIRONMENT=supabase
+DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/postgres
+```
+
+Use the connection string supplied by Supabase. Keep the password private and URL-encode special characters when required. M1M enables the connection handling needed for Supabase PostgreSQL connections.
+
+To switch away from Supabase, clear `DATABASE_URL` first and then select `DB_ENVIRONMENT=sqlite` or `DB_ENVIRONMENT=local_postgres`.
+
+## Run Migrations and Seed Data
+
+Run migrations from `backend`, because the Alembic script location is relative to that directory. Run the seed script from the repository root:
+
+```powershell
+Set-Location backend
+alembic -c alembic.ini upgrade head
+Set-Location ..
+python backend\scripts\seed.py
+```
+
+Alembic is the only supported owner of the database schema. Do not use `create_all()` as a replacement for migrations.
+
+The seed script is safe to run repeatedly. It inserts deterministic fictional development data:
+
+- 1 tenant: Vaidya Industrial Supplies
+- 8 customers: Maharashtra and inter-state examples
+- 12 catalog items
+- 12 opening stock records
+
+Verify idempotency by running the seed twice:
+
+```powershell
+python backend\scripts\seed.py
+python backend\scripts\seed.py
+```
+
+Useful migration commands:
+
+```powershell
+Set-Location backend
+alembic -c alembic.ini current
+alembic -c alembic.ini history
+alembic -c alembic.ini downgrade -1
+Set-Location ..
+```
+
+## Run the Application
+
+Use two PowerShell windows.
+
+### Terminal 1: backend
+
+From the repository root:
+
+```powershell
+.venv\Scripts\Activate.ps1
+uvicorn app.main:app --app-dir backend --reload --host 127.0.0.1 --port 8000
+```
+
+Backend URLs:
+
+- Health check: <http://127.0.0.1:8000/health>
+- Swagger UI: <http://127.0.0.1:8000/docs>
+- ReDoc: <http://127.0.0.1:8000/redoc>
+
+API documentation is enabled when `ENV=development`.
+
+### Terminal 2: frontend
+
+```powershell
+Set-Location frontend
+npm run dev
+```
+
+Open <http://localhost:5173>. Vite forwards `/api` and `/documents` to the backend at port 8000.
+
+For a production-style frontend build:
+
+```powershell
+npm run build
+npm run preview
+```
+
+The frontend preview server runs on port 4173 and is also allowed by the backend CORS configuration.
+
+## API Endpoints
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/health` | Backend liveness check |
+| `POST` | `/api/v1/chat` | Send a natural-language business request |
+| `GET` | `/api/v1/documents` | List quotations and invoices for the active tenant |
+| `GET` | `/documents/{tenant_id}/{doc_type}/{filename}` | Download a generated PDF |
+
+Example chat request:
+
+```powershell
+Invoke-RestMethod `
+	-Uri http://127.0.0.1:8000/api/v1/chat `
+	-Method Post `
+	-ContentType "application/json" `
+	-Body '{"message":"Create a quotation for Ramesh Traders for 10 TMT Steel Rod 12mm"}'
+```
+
+The response can include the detected intent, document type, document number, structured data, and a PDF URL.
+
+## Tests and Verification
+
+Run backend tests from the backend directory:
+
+```powershell
+Set-Location backend
+pytest tests -v
+Set-Location ..
+```
+
+Database-dependent seed tests expect the schema and seed data to exist. Run migrations and seeding first.
+
+The Gemini smoke test makes a real external API request. Set a valid `GEMINI_API_KEY` before running it, or skip it when working offline:
+
+```powershell
+pytest tests -v -k "not gemini"
+```
+
+Basic database checks are available from the repository root:
+
+```powershell
+python check_db.py
+python check_seed_paths.py
+```
+
+## Common Problems
+
+**The application connects to the wrong database**
+
+Check `.env`. If `DATABASE_URL` is non-empty, it overrides `DB_ENVIRONMENT`. Clear it when using SQLite or local PostgreSQL component settings.
+
+**Supabase connection fails**
+
+Confirm that the URL is copied from the correct Supabase project, the password is correct, and the database is reachable. Then rerun the migration command from `backend`.
+
+**The API starts but the UI cannot connect**
+
+Start FastAPI on port 8000 and Vite on port 5173. The frontend proxy is configured for those ports.
+
+**The chat request cannot find a tenant or customer**
+
+Run migration and seed commands using the same `.env` profile as the API. Confirm that `SPRINT_TENANT_ID` is empty or matches the seeded tenant UUID.
+
+**PDF generation fails on Windows**
+
+WeasyPrint may require native runtime dependencies on some Windows installations. Install the runtime dependencies documented for the installed WeasyPrint version, then restart the virtual environment and retry.
+
+## Project Scope and Limitations
+
+The current MVP intentionally uses a single development tenant selected through `SPRINT_TENANT_ID`. Authentication, production multi-tenant isolation, and PostgreSQL row-level security are not implemented yet.
+
+Planned follow-up areas include:
+
+- Authentication with phone OTP and JWT sessions
+- RLS policies and cross-tenant isolation tests
+- Production onboarding and business configuration
+- Dues and stock-query agents
+- CSV import, OCR, voice notes, analytics, and deployment automation
+- WhatsApp Cloud API integration
+- Tally integration and payment workflows
+
+Seed records are fictional development data only. Do not use them as real business or customer information.
+
+## Security Notes
+
+- Keep `.env` out of version control.
+- Never place database passwords or Gemini keys in source code.
+- Use `ENV=production` only with a proper deployment configuration and authentication layer.
+- Treat the Sprint 1 tenant fallback and generated PDFs as development-only behavior.
+
+## Product Documents
+
+- [Product requirements](m1m-mvp-prd.md)
+- [Technical requirements](m1m-mvp-trd.md)
+
 ---
 
-## Sprint 1 Limitations
-
-1. **No authentication** — Sprint 1 uses a single hardcoded `SPRINT_TENANT_ID`. Authentication (phone + OTP, JWT) is Sprint 2+.
-2. **No RLS** — Row-Level Security policies are schema-ready but not enabled. See warning below.
-3. **No agents** — LangGraph agents, Gemini, GST calculator, and PDF generation are Sprint 1 Steps 2–8.
-4. **No frontend** — The web app is Sprint 1 Step 6 (developer test UI), then full frontend in later sprints.
-5. **Single tenant** — Only one test tenant exists. Multi-tenant behaviour is not tested in Sprint 1.
-
-> ⚠️ **RLS and cross-tenant isolation testing are intentionally deferred to Sprint 2+.**
-> Before onboarding a second business, proper multi-tenant isolation and RLS must be implemented and tested.
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-|-------|------------|
-| Backend | Python 3.11+, FastAPI 0.115+ |
-| ORM | SQLAlchemy 2.x (async) |
-| Driver | asyncpg |
-| Migrations | Alembic 1.13+ |
-| Settings | pydantic-settings 2.x |
-| Database | Supabase PostgreSQL 15+ |
-| Testing | pytest + pytest-asyncio |
-
----
-
-*Companion documents: [`m1m-mvp-prd.md`](m1m-mvp-prd.md) · [`m1m-mvp-trd.md`](m1m-mvp-trd.md)*
+M1M is built incrementally: start with SQLite for a zero-setup local run, move to local PostgreSQL when you need a real PostgreSQL environment, and use Supabase when you need managed PostgreSQL infrastructure.

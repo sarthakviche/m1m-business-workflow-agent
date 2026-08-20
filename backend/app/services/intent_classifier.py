@@ -62,7 +62,7 @@ class IntentClassificationResult(BaseModel):
 
 CLASSIFICATION_PROMPT = """You are the intent classification and entity extraction engine for M1M (Munim.ai), an AI business workflow agent for Indian SMEs.
 
-Analyze the user's input message and return a JSON object strictly matching this JSON schema:
+Analyze the user's input message and conversation history, then return a JSON object strictly matching this JSON schema:
 {
   "intent": "quotation" | "invoice" | "clarify" | "out_of_scope",
   "confidence": float (0.0 to 1.0),
@@ -74,6 +74,12 @@ Analyze the user's input message and return a JSON object strictly matching this
   "is_quotation_conversion": boolean,
   "clarification_question": string | null
 }
+
+CRITICAL CONTEXT RULES:
+- If the user says only "Quotation" or "Invoice", remember the previous context to understand they are answering which document type they want.
+- If the user says only "Quotation" and prior context shows bot asked "Would you like quotation or invoice?", interpret this as intent="quotation".
+- If the user provides customer name and items in the current message (e.g., "Ramesh Enterprises 5 bags Rockwool"), extract both.
+- Look back at conversation history to fill in missing information that was mentioned earlier.
 
 RULES:
 1. "quotation": User wants to prepare/create/send a quotation, estimate, or price quote for a customer.
@@ -142,9 +148,16 @@ def _extract_via_regex(msg: str) -> IntentClassificationResult:
     )
 
 
-def classify_intent_sync(raw_message: str) -> IntentClassificationResult:
+def classify_intent_sync(raw_message: str, conversation_context: str = "") -> IntentClassificationResult:
     """
     Synchronously classify raw user message using Gemini with regex fallback.
+    
+    Parameters
+    ----------
+    raw_message : str
+        The current user message
+    conversation_context : str
+        Full conversation history for context awareness
     """
     msg = (raw_message or "").strip()
     if not msg:
@@ -156,7 +169,13 @@ def classify_intent_sync(raw_message: str) -> IntentClassificationResult:
 
     try:
         client = get_gemini_client()
-        prompt = f"{CLASSIFICATION_PROMPT}\n\nUser message: \"{msg}\""
+        
+        # Build prompt with conversation context
+        context_section = ""
+        if conversation_context.strip():
+            context_section = f"\n\nConversation history:\n{conversation_context}\n"
+        
+        prompt = f"{CLASSIFICATION_PROMPT}{context_section}\n\nUser message: \"{msg}\""
 
         response = client.models.generate_content(
             model=DEFAULT_MODEL,

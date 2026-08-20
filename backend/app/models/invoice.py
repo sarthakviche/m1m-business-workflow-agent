@@ -94,7 +94,7 @@ class Invoice(Base):
         Text, nullable=False, default="not_applicable"
     )
     created_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
+        TIMESTAMP(timezone=True), server_default=func.current_timestamp(), nullable=False
     )
 
 

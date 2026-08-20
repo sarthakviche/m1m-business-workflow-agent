@@ -43,6 +43,6 @@ class Stock(Base):
     # last_updated is refreshed whenever stock is adjusted
     last_updated: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True),
-        server_default=func.now(),
+        server_default=func.current_timestamp(),
         nullable=False,
     )

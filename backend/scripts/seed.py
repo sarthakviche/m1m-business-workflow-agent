@@ -53,6 +53,7 @@ if _env_file.exists():
         pass  # rely on env vars already exported in the shell
 
 # ─── App imports (after path + env setup) ────────────────────────────────────
+from sqlalchemy import insert  # noqa: E402
 from sqlalchemy.ext.asyncio import (  # noqa: E402
     AsyncSession,
     async_sessionmaker,
@@ -76,6 +77,28 @@ SEED_NAMESPACE = uuid.UUID("6ba7b810-9dad-11d1-80b4-00c04fd430c9")
 def seed_uuid(key: str) -> uuid.UUID:
     """Generate a deterministic UUID5 for a Sprint 1 seed record."""
     return uuid.uuid5(SEED_NAMESPACE, f"sprint1:{key}")
+
+
+def make_insert_stmt(table, db_url: str, values: dict):
+    """
+    Create an insert statement that handles duplicates idempotently.
+    
+    - For PostgreSQL: uses ON CONFLICT DO NOTHING
+    - For SQLite: uses INSERT OR IGNORE
+    """
+    is_sqlite = db_url.startswith("sqlite+")
+    
+    stmt = insert(table).values(**values)
+    
+    if is_sqlite:
+        # SQLite: use INSERT OR IGNORE
+        stmt = stmt.prefix_with("OR IGNORE")
+    else:
+        # PostgreSQL: use ON CONFLICT DO NOTHING  
+        stmt = pg_insert(table).values(**values)
+        stmt = stmt.on_conflict_do_nothing(index_elements=["id"])
+    
+    return stmt
 
 
 # ─── Sprint 1 tenant ─────────────────────────────────────────────────────────
@@ -305,15 +328,26 @@ async def seed() -> None:
     settings = get_settings()
     tenant_id = uuid.UUID(settings.effective_sprint_tenant_id)
 
-    # Supabase uses SSL with a self-signed cert chain — disable verification
-    _ssl_ctx = ssl.create_default_context()
-    _ssl_ctx.check_hostname = False
-    _ssl_ctx.verify_mode = ssl.CERT_NONE
+    # Build connect_args based on database type
+    _db_url = settings.async_database_url
+    _is_sqlite = _db_url.startswith("sqlite+")
+    _is_supabase = "supabase" in _db_url.lower()
+
+    _connect_args = {}
+    if not _is_sqlite:
+        # PostgreSQL-based databases
+        if _is_supabase:
+            # Supabase uses SSL with a self-signed cert chain — disable verification
+            _ssl_ctx = ssl.create_default_context()
+            _ssl_ctx.check_hostname = False
+            _ssl_ctx.verify_mode = ssl.CERT_NONE
+            _connect_args["ssl"] = _ssl_ctx
+        # For local PostgreSQL, no SSL is needed
 
     engine = create_async_engine(
         settings.async_database_url,
         echo=False,
-        connect_args={"ssl": _ssl_ctx},
+        connect_args=_connect_args,
     )
     session_factory = async_sessionmaker(
         engine, class_=AsyncSession, expire_on_commit=False
@@ -328,8 +362,7 @@ async def seed() -> None:
         async with session.begin():
 
             # ── Tenant ──────────────────────────────────────────────────────
-            stmt = pg_insert(Tenant).values(id=tenant_id, **TENANT_DATA)
-            stmt = stmt.on_conflict_do_nothing(index_elements=["id"])
+            stmt = make_insert_stmt(Tenant, _db_url, {"id": tenant_id, **TENANT_DATA})
             result = await session.execute(stmt)
             if result.rowcount == 0:
                 tenant_existing += 1
@@ -338,8 +371,7 @@ async def seed() -> None:
 
             # ── Customers ───────────────────────────────────────────────────
             for c in CUSTOMERS:
-                stmt = pg_insert(Customer).values(tenant_id=tenant_id, **c)
-                stmt = stmt.on_conflict_do_nothing(index_elements=["id"])
+                stmt = make_insert_stmt(Customer, _db_url, {"tenant_id": tenant_id, **c})
                 result = await session.execute(stmt)
                 if result.rowcount == 0:
                     customers_existing += 1
@@ -348,8 +380,7 @@ async def seed() -> None:
 
             # ── Items ────────────────────────────────────────────────────────
             for item in ITEMS:
-                stmt = pg_insert(Item).values(tenant_id=tenant_id, **item)
-                stmt = stmt.on_conflict_do_nothing(index_elements=["id"])
+                stmt = make_insert_stmt(Item, _db_url, {"tenant_id": tenant_id, **item})
                 result = await session.execute(stmt)
                 if result.rowcount == 0:
                     items_existing += 1
@@ -358,8 +389,7 @@ async def seed() -> None:
 
             # ── Stock (one row per item, item_id is the PK) ──────────────────
             for s in STOCK:
-                stmt = pg_insert(Stock).values(tenant_id=tenant_id, **s)
-                stmt = stmt.on_conflict_do_nothing(index_elements=["item_id"])
+                stmt = make_insert_stmt(Stock, _db_url, {"tenant_id": tenant_id, **s})
                 result = await session.execute(stmt)
                 if result.rowcount == 0:
                     stock_existing += 1

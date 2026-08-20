@@ -105,3 +105,45 @@ async def lookup_customer(
         return best_candidate
 
     return None
+
+
+async def create_customer_if_missing(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    name: str,
+) -> Customer:
+    """
+    Create a new customer if it doesn't exist (fuzzy match failed).
+    
+    Parameters
+    ----------
+    session : AsyncSession
+        Active database session.
+    tenant_id : uuid.UUID
+        Tenant to create customer for.
+    name : str
+        Customer name.
+    
+    Returns
+    -------
+    Customer
+        The newly created customer or existing match.
+    """
+    # First try to find existing customer
+    existing = await lookup_customer(session, tenant_id, name)
+    if existing:
+        return existing
+    
+    # Create new customer
+    new_customer = Customer(
+        id=uuid.uuid4(),
+        tenant_id=tenant_id,
+        name=name.strip(),
+        phone=None,
+        gstin=None,
+        state=None,
+        address=None,
+    )
+    session.add(new_customer)
+    await session.flush()  # Get the ID assigned without committing
+    return new_customer

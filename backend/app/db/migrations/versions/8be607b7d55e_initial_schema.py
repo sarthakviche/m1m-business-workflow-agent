@@ -27,7 +27,7 @@ def upgrade() -> None:
     sa.Column('state', sa.Text(), nullable=False),
     sa.Column('address', sa.Text(), nullable=True),
     sa.Column('logo_url', sa.Text(), nullable=True),
-    sa.Column('created_at', sa.TIMESTAMP(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('created_at', sa.TIMESTAMP(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP'), nullable=False),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_table('app_user',
@@ -36,7 +36,7 @@ def upgrade() -> None:
     sa.Column('phone', sa.Text(), nullable=False),
     sa.Column('name', sa.Text(), nullable=True),
     sa.Column('role', sa.Text(), nullable=False),
-    sa.Column('created_at', sa.TIMESTAMP(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('created_at', sa.TIMESTAMP(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP'), nullable=False),
     sa.CheckConstraint("role IN ('owner','staff','accountant')", name='ck_app_user_role'),
     sa.ForeignKeyConstraint(['tenant_id'], ['tenant.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
@@ -51,7 +51,7 @@ def upgrade() -> None:
     sa.Column('raw_message', sa.Text(), nullable=True),
     sa.Column('detected_intent', sa.Text(), nullable=True),
     sa.Column('agent_invoked', sa.Text(), nullable=True),
-    sa.Column('created_at', sa.TIMESTAMP(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('created_at', sa.TIMESTAMP(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP'), nullable=False),
     sa.CheckConstraint("channel IN ('whatsapp','web')", name='ck_convlog_channel'),
     sa.CheckConstraint("direction IN ('inbound','outbound')", name='ck_convlog_direction'),
     sa.ForeignKeyConstraint(['tenant_id'], ['tenant.id'], ondelete='CASCADE'),
@@ -66,7 +66,7 @@ def upgrade() -> None:
     sa.Column('gstin', sa.Text(), nullable=True),
     sa.Column('state', sa.Text(), nullable=True),
     sa.Column('address', sa.Text(), nullable=True),
-    sa.Column('created_at', sa.TIMESTAMP(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('created_at', sa.TIMESTAMP(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP'), nullable=False),
     sa.ForeignKeyConstraint(['tenant_id'], ['tenant.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
@@ -89,7 +89,7 @@ def upgrade() -> None:
     sa.Column('gst_rate_percent', sa.Numeric(precision=5, scale=2), nullable=False),
     sa.Column('unit_price', sa.Numeric(precision=12, scale=2), nullable=False),
     sa.Column('unit', sa.Text(), nullable=False),
-    sa.Column('created_at', sa.TIMESTAMP(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('created_at', sa.TIMESTAMP(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP'), nullable=False),
     sa.ForeignKeyConstraint(['tenant_id'], ['tenant.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
@@ -111,7 +111,7 @@ def upgrade() -> None:
     sa.Column('status', sa.Text(), nullable=False),
     sa.Column('subtotal', sa.Numeric(precision=14, scale=2), nullable=True),
     sa.Column('pdf_url', sa.Text(), nullable=True),
-    sa.Column('created_at', sa.TIMESTAMP(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('created_at', sa.TIMESTAMP(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP'), nullable=False),
     sa.CheckConstraint("status IN ('draft','sent','converted')", name='ck_quotation_status'),
     sa.ForeignKeyConstraint(['customer_id'], ['customer.id'], ),
     sa.ForeignKeyConstraint(['tenant_id'], ['tenant.id'], ondelete='CASCADE'),
@@ -122,7 +122,7 @@ def upgrade() -> None:
     sa.Column('item_id', sa.UUID(), nullable=False),
     sa.Column('tenant_id', sa.UUID(), nullable=False),
     sa.Column('quantity_available', sa.Numeric(precision=12, scale=2), nullable=False),
-    sa.Column('last_updated', sa.TIMESTAMP(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('last_updated', sa.TIMESTAMP(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP'), nullable=False),
     sa.ForeignKeyConstraint(['item_id'], ['item.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['tenant_id'], ['tenant.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('item_id')
@@ -142,7 +142,7 @@ def upgrade() -> None:
     sa.Column('due_date', sa.Date(), nullable=True),
     sa.Column('pdf_url', sa.Text(), nullable=True),
     sa.Column('tally_push_status', sa.Text(), nullable=False),
-    sa.Column('created_at', sa.TIMESTAMP(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('created_at', sa.TIMESTAMP(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP'), nullable=False),
     sa.CheckConstraint("status IN ('unpaid','partially_paid','paid')", name='ck_invoice_status'),
     sa.CheckConstraint("tally_push_status IN ('not_applicable','pending','pushed')", name='ck_invoice_tally_status'),
     sa.ForeignKeyConstraint(['customer_id'], ['customer.id'], ),
@@ -181,7 +181,7 @@ def upgrade() -> None:
     sa.Column('invoice_id', sa.UUID(), nullable=False),
     sa.Column('amount', sa.Numeric(precision=14, scale=2), nullable=False),
     sa.Column('method', sa.Text(), nullable=True),
-    sa.Column('paid_at', sa.TIMESTAMP(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('paid_at', sa.TIMESTAMP(timezone=True), server_default=sa.text('CURRENT_TIMESTAMP'), nullable=False),
     sa.CheckConstraint("method IN ('upi','cash','bank_transfer')", name='ck_payment_method'),
     sa.ForeignKeyConstraint(['invoice_id'], ['invoice.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')

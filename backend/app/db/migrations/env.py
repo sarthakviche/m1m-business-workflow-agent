@@ -90,17 +90,28 @@ async def run_async_migrations() -> None:
     # Override the placeholder URL from alembic.ini with the real one from env
     configuration["sqlalchemy.url"] = settings.async_database_url
 
-    # Supabase uses SSL with a self-signed cert in the chain.
-    # We disable hostname verification to work with Supabase's certificate.
-    _ssl_ctx = ssl.create_default_context()
-    _ssl_ctx.check_hostname = False
-    _ssl_ctx.verify_mode = ssl.CERT_NONE
+    # Build connect_args based on database type
+    _db_url = settings.async_database_url
+    _is_sqlite = _db_url.startswith("sqlite+")
+    _is_supabase = "supabase" in _db_url.lower()
+
+    _connect_args = {}
+    if not _is_sqlite:
+        # PostgreSQL-based databases
+        if _is_supabase:
+            # Supabase uses SSL with a self-signed cert in the chain.
+            # We disable hostname verification to work with Supabase's certificate.
+            _ssl_ctx = ssl.create_default_context()
+            _ssl_ctx.check_hostname = False
+            _ssl_ctx.verify_mode = ssl.CERT_NONE
+            _connect_args["ssl"] = _ssl_ctx
+        # For local PostgreSQL, no SSL is needed
 
     connectable = async_engine_from_config(
         configuration,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
-        connect_args={"ssl": _ssl_ctx},
+        connect_args=_connect_args,
     )
 
     async with connectable.connect() as connection:

@@ -39,6 +39,20 @@ def _find_env_file() -> str:
     return ".env"  # pydantic-settings silently ignores a missing env_file
 
 
+def _find_workspace_root() -> Path:
+    """
+    Find the workspace root by walking up until we find .env or .git.
+    This is more reliable than using Path.cwd().
+    """
+    current = Path.cwd()
+    for _ in range(5):
+        if (current / ".env").exists() or (current / ".git").exists():
+            return current
+        current = current.parent
+    # Fallback: return current directory
+    return current
+
+
 def _normalize_db_url(url: str) -> str:
     """
     Normalise DATABASE_URL to use postgresql+asyncpg:// scheme.
@@ -88,9 +102,20 @@ class Settings(BaseSettings):
     """
     Application settings loaded from environment variables.
     All secrets must come from the environment — no hardcoded values.
+    
+    Supports multiple database backends:
+      - supabase: Remote PostgreSQL (via Supabase)
+      - local_postgres: Local PostgreSQL on localhost:5432
+      - sqlite: SQLite file (local development, no external dependencies)
     """
 
-    database_url: str
+    database_url: Optional[str] = None
+    db_environment: str = "sqlite"  # Default to SQLite for zero-config dev
+    db_host: str = "localhost"
+    db_port: int = 5432
+    db_name: str = "m1m_local"
+    db_user: str = "postgres"
+    db_password: str = "postgres"
     env: str = "development"
     sprint_tenant_id: str = ""
 
@@ -106,8 +131,46 @@ class Settings(BaseSettings):
 
     @property
     def async_database_url(self) -> str:
-        """DATABASE_URL normalised to use the asyncpg driver scheme."""
-        return _normalize_db_url(self.database_url)
+        """
+        Resolves the final database URL based on DB_ENVIRONMENT setting.
+        
+        Priority:
+          1. If DATABASE_URL is explicitly set → use it (backward compatibility)
+          2. If DB_ENVIRONMENT is set → generate URL from config
+          3. Default → SQLite (zero-config development)
+        """
+        # Backward compatibility: if DATABASE_URL is explicitly set, use it
+        if self.database_url and self.database_url.strip():
+            return _normalize_db_url(self.database_url)
+        
+        # Generate URL based on DB_ENVIRONMENT
+        env = (self.db_environment or "").strip().lower()
+        
+        if env == "supabase":
+            # Expect DATABASE_URL to be set for Supabase
+            if self.database_url and self.database_url.strip():
+                return _normalize_db_url(self.database_url)
+            raise ValueError(
+                "DB_ENVIRONMENT=supabase requires DATABASE_URL to be set in .env"
+            )
+        
+        elif env == "local_postgres":
+            # Build PostgreSQL connection string from components
+            url = f"postgresql+asyncpg://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
+            return url
+        
+        elif env == "sqlite":
+            # SQLite connection string (file-based, local)
+            # Always store at workspace_root/m1m.db regardless of CWD
+            workspace_root = _find_workspace_root()
+            db_file = workspace_root / "m1m.db"
+            return f"sqlite+aiosqlite:///{db_file}"
+        
+        else:
+            raise ValueError(
+                f"Invalid DB_ENVIRONMENT: {env}. "
+                "Must be one of: 'supabase', 'local_postgres', 'sqlite'"
+            )
 
     @property
     def effective_sprint_tenant_id(self) -> str:

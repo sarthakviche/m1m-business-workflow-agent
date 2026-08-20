@@ -9,6 +9,13 @@ from __future__ import annotations
 from typing import Any, Dict, List, Literal, Optional, TypedDict
 
 
+class ConversationMessage(TypedDict, total=False):
+    """Single message in conversation history."""
+    role: Literal["user", "assistant"]
+    content: str
+    timestamp: Optional[str]
+
+
 class AgentState(TypedDict, total=False):
     """
     Workflow state passed through LangGraph nodes.
@@ -18,6 +25,10 @@ class AgentState(TypedDict, total=False):
     user_id: Optional[str]
     channel: Literal["whatsapp", "web"]
     raw_message: str
+    
+    # Conversation history for context awareness
+    conversation_history: List[ConversationMessage]
+    full_conversation_text: str  # Full conversation for context in intent classifier
 
     # Intent and entity classification
     detected_intent: Optional[Literal["quotation", "invoice", "clarify", "out_of_scope"]]

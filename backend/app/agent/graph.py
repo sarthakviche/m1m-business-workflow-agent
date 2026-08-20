@@ -25,7 +25,7 @@ from app.db.session import AsyncSessionLocal
 from app.models.conversation_log import ConversationLog
 from app.models.customer import Customer
 from app.models.item import Item
-from app.services.customer_lookup import lookup_customer
+from app.services.customer_lookup import lookup_customer, create_customer_if_missing
 from app.services.intent_classifier import classify_intent_sync
 from app.services.invoice_service import (
     InsufficientStockError,
@@ -52,9 +52,11 @@ async def _get_session(config: RunnableConfig) -> AsyncIterator[AsyncSession]:
 
 
 async def classify_intent_node(state: AgentState) -> Dict[str, Any]:
-    """Node: Classifies user message intent and extracts structured entities."""
+    """Node: Classifies user message intent and extracts structured entities with conversation context."""
     raw_message = state.get("raw_message", "")
-    res = classify_intent_sync(raw_message)
+    conversation_context = state.get("full_conversation_text", "")
+    
+    res = classify_intent_sync(raw_message, conversation_context)
 
     extracted = {
         "customer_name": res.customer_name,
@@ -94,7 +96,7 @@ async def classify_intent_node(state: AgentState) -> Dict[str, Any]:
         elif "customer_name" in missing_fields:
             response_text = "Which customer should this document be prepared for?"
         elif "line_items" in missing_fields:
-            response_text = f"Which items and quantities should be billed for **{res.customer_name}**?"
+            response_text = f"Who would you like to create the quotation for, and what items with quantities should be included?" if res.customer_name else f"Which items and quantities should be billed for **{res.customer_name}**?"
         elif "quotation_number" in missing_fields:
             response_text = "Please provide the quotation number you wish to convert (e.g. Q-202608-001)."
         else:
@@ -122,18 +124,17 @@ def route_by_intent(state: AgentState) -> str:
 
 
 async def quotation_agent_node(state: AgentState, config: RunnableConfig) -> Dict[str, Any]:
-    """Node: Handles Quotation creation deterministically."""
+    """Node: Handles Quotation creation deterministically with customer auto-creation."""
     tenant_id = uuid.UUID(state["tenant_id"])
     entities = state.get("extracted_entities", {})
 
     async with _get_session(config) as session:
         cust_name = entities.get("customer_name")
+        # Try to find customer, or create if missing
         customer = await lookup_customer(session, tenant_id, cust_name)
         if not customer:
-            return {
-                "response_text": f"Customer **'{cust_name}'** was not found in your customer directory. Please check the spelling or add them first.",
-                "document_type": None,
-            }
+            # Auto-create customer on first mention
+            customer = await create_customer_if_missing(session, tenant_id, cust_name)
 
         raw_items = entities.get("line_items", [])
         resolved_items: List[Tuple[Item, Decimal]] = []
@@ -144,7 +145,7 @@ async def quotation_agent_node(state: AgentState, config: RunnableConfig) -> Dic
             item = await lookup_item(session, tenant_id, i_name)
             if not item:
                 return {
-                    "response_text": f"Item **'{i_name}'** was not found in your catalog. Please check the item name.",
+                    "response_text": f"Item **'{i_name}'** was not found in your catalog. Please check the item name or add it with HSN code, GST rate, and unit price.",
                     "document_type": None,
                 }
             resolved_items.append((item, qty))
@@ -193,10 +194,8 @@ async def invoice_agent_node(state: AgentState, config: RunnableConfig) -> Dict[
         cust_name = entities.get("customer_name")
         customer = await lookup_customer(session, tenant_id, cust_name)
         if not customer:
-            return {
-                "response_text": f"Customer **'{cust_name}'** was not found in your customer directory.",
-                "document_type": None,
-            }
+            # Auto-create customer on first mention
+            customer = await create_customer_if_missing(session, tenant_id, cust_name)
 
         raw_items = entities.get("line_items", [])
         resolved_items: List[Tuple[Item, Decimal]] = []
@@ -207,7 +206,7 @@ async def invoice_agent_node(state: AgentState, config: RunnableConfig) -> Dict[
             item = await lookup_item(session, tenant_id, i_name)
             if not item:
                 return {
-                    "response_text": f"Item **'{i_name}'** was not found in your catalog.",
+                    "response_text": f"Item **'{i_name}'** was not found in your catalog. Please check the item name or add it with HSN code, GST rate, and unit price.",
                     "document_type": None,
                 }
             resolved_items.append((item, qty))

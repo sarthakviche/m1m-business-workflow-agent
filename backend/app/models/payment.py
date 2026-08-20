@@ -38,5 +38,5 @@ class Payment(Base):
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     method: Mapped[str | None] = mapped_column(Text, nullable=True)
     paid_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True), server_default=func.now(), nullable=False
+        TIMESTAMP(timezone=True), server_default=func.current_timestamp(), nullable=False
     )
