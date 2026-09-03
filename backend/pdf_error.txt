@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "C:\Users\vedik\Desktop\AI CP\m1m-business-workflow-agent\backend\app\services\pdf_generator.py", line 109, in generate_invoice_pdf_bytes
+    from reportlab.lib.pagesizes import A4
+ModuleNotFoundError: No module named 'reportlab'
