@@ -12,7 +12,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/" element={<Navigate to="/chat" replace />} />
         <Route path="/login" element={<Login />} />
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/chat" element={<Chat />} />
@@ -20,7 +20,7 @@ export default function App() {
         <Route path="/customers" element={<Customers />} />
         <Route path="/inventory" element={<Inventory />} />
         <Route path="/settings" element={<Settings />} />
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        <Route path="*" element={<Navigate to="/chat" replace />} />
       </Routes>
     </BrowserRouter>
   )

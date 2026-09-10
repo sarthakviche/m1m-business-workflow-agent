@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 
 interface Metrics {
   total_customers: number
@@ -57,6 +57,7 @@ export default function Dashboard() {
       </header>
 
       <nav style={{ display: 'flex', gap: '12px', marginBottom: '24px', flexWrap: 'wrap' }}>
+        <a href="/chat" style={{ color: '#fff', padding: '8px 16px', borderRadius: '6px', background: '#00a884', textDecoration: 'none', fontWeight: 600 }}>← M1M Chat</a>
         <a href="/dashboard" style={{ color: '#38bdf8', padding: '8px 16px', borderRadius: '6px', background: '#1e293b', textDecoration: 'none', fontWeight: 600 }}>Dashboard</a>
         <a href="/customers" style={{ color: '#94a3b8', padding: '8px 16px', borderRadius: '6px', textDecoration: 'none' }}>Customers</a>
         <a href="/inventory" style={{ color: '#94a3b8', padding: '8px 16px', borderRadius: '6px', textDecoration: 'none' }}>Inventory</a>
