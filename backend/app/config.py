@@ -176,11 +176,19 @@ class Settings(BaseSettings):
     def effective_sprint_tenant_id(self) -> str:
         """
         Returns the Sprint 1 tenant UUID.
-        Uses SPRINT_TENANT_ID from the environment if set and non-empty,
-        otherwise falls back to the documented dev UUID.
+        Uses SPRINT_TENANT_ID from the environment if set and non-empty.
+        In development mode (ENV=development), falls back to SPRINT_TENANT_ID_DEFAULT.
+        In any other environment, raises ValueError if SPRINT_TENANT_ID is not provided.
         """
         tid = (self.sprint_tenant_id or "").strip()
-        return tid if tid else SPRINT_TENANT_ID_DEFAULT
+        if tid:
+            return tid
+        if self.env == "development":
+            return SPRINT_TENANT_ID_DEFAULT
+        raise ValueError(
+            "SPRINT_TENANT_ID must be set when ENV is not 'development'. "
+            "The hardcoded demo tenant UUID is only available in development mode."
+        )
 
 
 @lru_cache()

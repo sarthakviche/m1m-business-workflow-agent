@@ -31,7 +31,7 @@ class AgentState(TypedDict, total=False):
     full_conversation_text: str  # Full conversation for context in intent classifier
 
     # Intent and entity classification
-    detected_intent: Optional[Literal["quotation", "invoice", "clarify", "out_of_scope"]]
+    detected_intent: Optional[Literal["quotation", "invoice", "catalog_query", "future_feature", "off_topic", "clarify", "out_of_scope"]]
     extracted_entities: Dict[str, Any]
     missing_fields: List[str]
     confidence: float
@@ -42,8 +42,16 @@ class AgentState(TypedDict, total=False):
     response_attachments: Optional[List[Dict[str, Any]]]
     requires_confirmation: bool
 
+    # Customer matching confirmation state
+    customer_match_pending: bool
+    customer_match_candidate_name: Optional[str]
+    customer_match_candidate_id: Optional[str]
+    customer_match_input_name: Optional[str]
+    customer_was_auto_created: bool
+
     # Document details for API responses
     document_type: Optional[Literal["quotation", "invoice"]]
     document_id: Optional[str]
     document_number: Optional[str]
     data: Optional[Dict[str, Any]]
+

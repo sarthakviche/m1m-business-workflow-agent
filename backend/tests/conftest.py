@@ -40,13 +40,18 @@ async def db_session():
     Each test gets its own connection to avoid asyncio event loop conflicts.
     """
     settings = get_settings()
-    _ssl_ctx = ssl.create_default_context()
-    _ssl_ctx.check_hostname = False
-    _ssl_ctx.verify_mode = ssl.CERT_NONE
+    db_url = settings.async_database_url
+    connect_args = {}
+    if not db_url.startswith("sqlite+"):
+        _ssl_ctx = ssl.create_default_context()
+        _ssl_ctx.check_hostname = False
+        _ssl_ctx.verify_mode = ssl.CERT_NONE
+        connect_args["ssl"] = _ssl_ctx
+
     engine = create_async_engine(
-        settings.async_database_url,
+        db_url,
         echo=False,
-        connect_args={"ssl": _ssl_ctx},
+        connect_args=connect_args,
     )
     session_factory = async_sessionmaker(
         engine, class_=AsyncSession, expire_on_commit=False

@@ -32,7 +32,7 @@ from app.models.item import Item
 from app.models.quotation import Quotation, QuotationLine
 from app.models.stock import Stock
 from app.models.tenant import Tenant
-from app.services.customer_lookup import lookup_customer
+from app.services.customer_lookup import lookup_customer, lookup_customer_scored
 from app.services.doc_number import generate_invoice_number, generate_quotation_number
 from app.services.intent_classifier import IntentClassificationResult, classify_intent_sync
 from app.services.invoice_service import (
@@ -93,6 +93,43 @@ def test_intent_empty_input():
     assert result.intent == "clarify"
 
 
+@pytest.mark.asyncio
+async def test_missing_customer_name_prompts_directly(db_session, tenant_id_uuid):
+    """Verify that a quotation request without a customer name prompts directly for the customer."""
+    initial_state = {
+        "tenant_id": str(tenant_id_uuid),
+        "user_id": None,
+        "channel": "web",
+        "raw_message": "Create a quotation for 10 TMT steel rods",
+        "conversation_history": [],
+        "full_conversation_text": "User: Create a quotation for 10 TMT steel rods",
+    }
+    config = {"configurable": {"session": db_session}}
+    final_state = await agent_graph.ainvoke(initial_state, config=config)
+
+    assert final_state.get("detected_intent") == "clarify"
+    assert "customer name" in final_state.get("response_text", "").lower()
+
+
+@pytest.mark.asyncio
+async def test_missing_line_items_prompts_with_customer_name(db_session, tenant_id_uuid):
+    """Verify that a quotation request with a customer name but missing items prompts for items for that customer."""
+    initial_state = {
+        "tenant_id": str(tenant_id_uuid),
+        "user_id": None,
+        "channel": "web",
+        "raw_message": "Create a quotation for Ramesh Traders",
+        "conversation_history": [],
+        "full_conversation_text": "User: Create a quotation for Ramesh Traders",
+    }
+    config = {"configurable": {"session": db_session}}
+    final_state = await agent_graph.ainvoke(initial_state, config=config)
+
+    assert final_state.get("detected_intent") == "clarify"
+    assert "Ramesh Traders" in final_state.get("response_text", "")
+    assert "items" in final_state.get("response_text", "").lower()
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # 2. LOOKUP SERVICES TESTS
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -107,11 +144,38 @@ async def test_customer_lookup_exact(db_session, tenant_id_uuid):
 
 
 @pytest.mark.asyncio
+async def test_customer_lookup_scored_exact(db_session, tenant_id_uuid):
+    """Verify exact lookup returns match_type='exact' and score=1.0."""
+    res = await lookup_customer_scored(db_session, tenant_id_uuid, "Ramesh Traders")
+    assert res.customer is not None
+    assert res.score == 1.0
+    assert res.match_type == "exact"
+
+
+@pytest.mark.asyncio
+async def test_customer_lookup_scored_near_miss_requires_confirm(db_session, tenant_id_uuid):
+    """Verify near miss (0.4-0.8) returns match_type='fuzzy_medium' and does not auto-match."""
+    res = await lookup_customer_scored(db_session, tenant_id_uuid, "Ramesh Trading")
+    assert res.customer is not None
+    assert 0.4 <= res.score <= 0.8
+    assert res.match_type == "fuzzy_medium"
+
+
+@pytest.mark.asyncio
+async def test_customer_lookup_scored_low_auto_create(db_session, tenant_id_uuid):
+    """Verify low similarity (<0.4) returns match_type='none'."""
+    res = await lookup_customer_scored(db_session, tenant_id_uuid, "Zephyr Aerospace Systems")
+    assert res.match_type == "none"
+    assert res.score < 0.4
+
+
+@pytest.mark.asyncio
 async def test_customer_lookup_fuzzy(db_session, tenant_id_uuid):
     """Verify fuzzy customer lookup with partial name."""
-    cust = await lookup_customer(db_session, tenant_id_uuid, "ramesh")
-    assert cust is not None
-    assert "Ramesh Traders" == cust.name
+    cust = await lookup_customer(db_session, tenant_id_uuid, "Ramesh Traders Pvt Ltd")
+    # Score for exact base match should be high
+    res = await lookup_customer_scored(db_session, tenant_id_uuid, "Ramesh Traders")
+    assert res.customer is not None
 
 
 @pytest.mark.asyncio
@@ -119,6 +183,7 @@ async def test_customer_lookup_not_found(db_session, tenant_id_uuid):
     """Verify unknown customer returns None."""
     cust = await lookup_customer(db_session, tenant_id_uuid, "NonExistentCustomerXYZ")
     assert cust is None
+
 
 
 @pytest.mark.asyncio
@@ -253,6 +318,37 @@ async def test_direct_invoice_intra_state(db_session, tenant_id_uuid):
     stock_res_after = await db_session.execute(select(Stock).where(Stock.item_id == item.id))
     after_stock = stock_res_after.scalar_one().quantity_available
     assert after_stock == initial_stock - qty
+    assert inv_data.get("state_assumed") is False
+
+
+@pytest.mark.asyncio
+async def test_direct_invoice_state_assumed_flag_and_note(db_session, tenant_id_uuid):
+    """Verify that a customer with no state gets state_assumed=True and response text note."""
+    stateless_cust = Customer(
+        id=uuid.uuid4(),
+        tenant_id=tenant_id_uuid,
+        name="Stateless Traders",
+        phone=None,
+        gstin=None,
+        state=None,
+        address=None,
+    )
+    db_session.add(stateless_cust)
+    await db_session.flush()
+
+    item = await lookup_item(db_session, tenant_id_uuid, "TMT Steel Rod 12mm")
+    qty = Decimal("2.00")
+
+    inv_data = await create_direct_invoice(
+        session=db_session,
+        tenant_id=tenant_id_uuid,
+        customer=stateless_cust,
+        items_with_qty=[(item, qty)],
+    )
+
+    assert inv_data["state_assumed"] is True
+    assert "don't have **Stateless Traders**'s state on file" in inv_data["response_text"]
+    assert "intra-state invoice" in inv_data["response_text"]
 
 
 @pytest.mark.asyncio
@@ -408,7 +504,69 @@ async def test_agent_graph_quotation_flow(db_session, tenant_id_uuid):
     assert len(logs) >= 2
 
 
+@pytest.mark.asyncio
+async def test_agent_quotation_near_miss_customer_triggers_confirmation(db_session, tenant_id_uuid):
+    """Verify that a near-miss customer name (e.g. Ramesh Trading) triggers confirmation instead of auto-matching."""
+    initial_state = {
+        "tenant_id": str(tenant_id_uuid),
+        "user_id": None,
+        "channel": "web",
+        "raw_message": "Create a quotation for Ramesh Trading for 5 TMT steel rods",
+        "conversation_history": [],
+        "full_conversation_text": "User: Create a quotation for Ramesh Trading for 5 TMT steel rods",
+    }
+    config = {"configurable": {"session": db_session}}
+    final_state = await agent_graph.ainvoke(initial_state, config=config)
+
+    assert final_state.get("customer_match_pending") is True
+    assert "Did you mean **Ramesh Traders**" in final_state.get("response_text", "")
+    assert final_state.get("document_type") is None
+
+
+@pytest.mark.asyncio
+async def test_catalog_item_query_specific_item(db_session, tenant_id_uuid):
+    """Verify natural language query for price/stock of a specific item returns correct stored data."""
+    initial_state = {
+        "tenant_id": str(tenant_id_uuid),
+        "user_id": None,
+        "channel": "web",
+        "raw_message": "What's the price of Steel Rod 12mm?",
+        "conversation_history": [],
+        "full_conversation_text": "User: What's the price of Steel Rod 12mm?",
+    }
+    config = {"configurable": {"session": db_session}}
+    final_state = await agent_graph.ainvoke(initial_state, config=config)
+
+    assert final_state.get("detected_intent") == "catalog_query"
+    resp = final_state.get("response_text", "")
+    assert "Steel Rod 12mm" in resp
+    assert "58.00" in resp or "₹58" in resp
+    assert "18%" in resp
+    assert "Stock Available" in resp
+
+
+@pytest.mark.asyncio
+async def test_catalog_summary_query(db_session, tenant_id_uuid):
+    """Verify general catalog query returns formatted item summary list."""
+    initial_state = {
+        "tenant_id": str(tenant_id_uuid),
+        "user_id": None,
+        "channel": "web",
+        "raw_message": "Show me all items in our catalog",
+        "conversation_history": [],
+        "full_conversation_text": "User: Show me all items in our catalog",
+    }
+    config = {"configurable": {"session": db_session}}
+    final_state = await agent_graph.ainvoke(initial_state, config=config)
+
+    assert final_state.get("detected_intent") == "catalog_query"
+    resp = final_state.get("response_text", "")
+    assert "Here are items from your catalog" in resp
+    assert "Stock:" in resp
+
+
 from app.api.v1.chat import get_db_session
+
 
 
 @pytest.mark.asyncio

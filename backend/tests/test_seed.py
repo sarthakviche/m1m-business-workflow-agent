@@ -88,6 +88,15 @@ async def test_tenant_id_is_deterministic(db_session):
     )
 
 
+def test_tenant_id_production_guard():
+    """Verify that in non-development env without SPRINT_TENANT_ID, ValueError is raised."""
+    from app.config import Settings
+    prod_settings = Settings(env="production", sprint_tenant_id="")
+    with pytest.raises(ValueError, match="SPRINT_TENANT_ID must be set when ENV is not 'development'"):
+        _ = prod_settings.effective_sprint_tenant_id
+
+
+
 @pytest.mark.asyncio
 async def test_tenant_business_details(db_session):
     """Tenant must have correct business name, state, and a GSTIN."""

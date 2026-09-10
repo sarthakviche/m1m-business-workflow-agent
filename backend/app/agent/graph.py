@@ -25,7 +25,8 @@ from app.db.session import AsyncSessionLocal
 from app.models.conversation_log import ConversationLog
 from app.models.customer import Customer
 from app.models.item import Item
-from app.services.customer_lookup import lookup_customer, create_customer_if_missing
+from app.services.catalog_service import lookup_catalog_item_details, list_catalog_summary
+from app.services.customer_lookup import lookup_customer_scored, create_customer_if_missing
 from app.services.intent_classifier import classify_intent_sync
 from app.services.invoice_service import (
     InsufficientStockError,
@@ -63,6 +64,7 @@ async def classify_intent_node(state: AgentState) -> Dict[str, Any]:
         "line_items": [i.model_dump() for i in res.line_items],
         "quotation_number": res.quotation_number,
         "is_quotation_conversion": res.is_quotation_conversion,
+        "catalog_item_name": res.catalog_item_name,
     }
 
     missing_fields: List[str] = []
@@ -96,7 +98,10 @@ async def classify_intent_node(state: AgentState) -> Dict[str, Any]:
         elif "customer_name" in missing_fields:
             response_text = "Which customer should this document be prepared for?"
         elif "line_items" in missing_fields:
-            response_text = f"Who would you like to create the quotation for, and what items with quantities should be included?" if res.customer_name else f"Which items and quantities should be billed for **{res.customer_name}**?"
+            if res.customer_name:
+                response_text = f"Which items and quantities should be included for **{res.customer_name}**?"
+            else:
+                response_text = "Which items and quantities should be included?"
         elif "quotation_number" in missing_fields:
             response_text = "Please provide the quotation number you wish to convert (e.g. Q-202608-001)."
         else:
@@ -118,6 +123,8 @@ def route_by_intent(state: AgentState) -> str:
         return "quotation_agent"
     elif intent == "invoice":
         return "invoice_agent"
+    elif intent == "catalog_query":
+        return "catalog_agent"
     elif intent == "out_of_scope":
         return "out_of_scope_agent"
     return "clarify_agent"
@@ -130,11 +137,26 @@ async def quotation_agent_node(state: AgentState, config: RunnableConfig) -> Dic
 
     async with _get_session(config) as session:
         cust_name = entities.get("customer_name")
-        # Try to find customer, or create if missing
-        customer = await lookup_customer(session, tenant_id, cust_name)
-        if not customer:
-            # Auto-create customer on first mention
+        match_result = await lookup_customer_scored(session, tenant_id, cust_name)
+        customer_auto_created = False
+
+        if match_result.match_type in ("exact", "fuzzy_high"):
+            customer = match_result.customer
+        elif match_result.match_type == "fuzzy_medium":
+            # 0.4 to 0.8 band: ask confirmation, do not auto-match
+            return {
+                "response_text": f"Did you mean **{match_result.customer.name}**? Or is this a new customer?",
+                "requires_confirmation": True,
+                "customer_match_pending": True,
+                "customer_match_candidate_name": match_result.customer.name,
+                "customer_match_candidate_id": str(match_result.customer.id),
+                "customer_match_input_name": cust_name,
+                "document_type": None,
+            }
+        else:
+            # Below 0.4: auto-create as new customer
             customer = await create_customer_if_missing(session, tenant_id, cust_name)
+            customer_auto_created = True
 
         raw_items = entities.get("line_items", [])
         resolved_items: List[Tuple[Item, Decimal]] = []
@@ -152,13 +174,17 @@ async def quotation_agent_node(state: AgentState, config: RunnableConfig) -> Dic
 
         # Create quotation
         result = await create_quotation(session, tenant_id, customer, resolved_items)
+        response_text = result["response_text"]
+        if customer_auto_created:
+            response_text += f"\n\n_Note: I've added **{customer.name}** as a new customer — let me know if that's wrong._"
 
         return {
-            "response_text": result["response_text"],
+            "response_text": response_text,
             "document_type": "quotation",
             "document_id": result["quotation_id"],
             "document_number": result["quotation_number"],
             "pdf_url": result["pdf_url"],
+            "customer_was_auto_created": customer_auto_created,
             "response_attachments": [{"type": "pdf", "url": result["pdf_url"]}],
             "data": result,
         }
@@ -192,10 +218,26 @@ async def invoice_agent_node(state: AgentState, config: RunnableConfig) -> Dict[
 
         # Flow A: Direct Invoice
         cust_name = entities.get("customer_name")
-        customer = await lookup_customer(session, tenant_id, cust_name)
-        if not customer:
-            # Auto-create customer on first mention
+        match_result = await lookup_customer_scored(session, tenant_id, cust_name)
+        customer_auto_created = False
+
+        if match_result.match_type in ("exact", "fuzzy_high"):
+            customer = match_result.customer
+        elif match_result.match_type == "fuzzy_medium":
+            # 0.4 to 0.8 band: ask confirmation, do not auto-match
+            return {
+                "response_text": f"Did you mean **{match_result.customer.name}**? Or is this a new customer?",
+                "requires_confirmation": True,
+                "customer_match_pending": True,
+                "customer_match_candidate_name": match_result.customer.name,
+                "customer_match_candidate_id": str(match_result.customer.id),
+                "customer_match_input_name": cust_name,
+                "document_type": None,
+            }
+        else:
+            # Below 0.4: auto-create as new customer
             customer = await create_customer_if_missing(session, tenant_id, cust_name)
+            customer_auto_created = True
 
         raw_items = entities.get("line_items", [])
         resolved_items: List[Tuple[Item, Decimal]] = []
@@ -213,12 +255,17 @@ async def invoice_agent_node(state: AgentState, config: RunnableConfig) -> Dict[
 
         try:
             result = await create_direct_invoice(session, tenant_id, customer, resolved_items)
+            response_text = result["response_text"]
+            if customer_auto_created:
+                response_text += f"\n\n_Note: I've added **{customer.name}** as a new customer — let me know if that's wrong._"
+
             return {
-                "response_text": result["response_text"],
+                "response_text": response_text,
                 "document_type": "invoice",
                 "document_id": result["invoice_id"],
                 "document_number": result["invoice_number"],
                 "pdf_url": result["pdf_url"],
+                "customer_was_auto_created": customer_auto_created,
                 "response_attachments": [{"type": "pdf", "url": result["pdf_url"]}],
                 "data": result,
             }
@@ -231,6 +278,48 @@ async def invoice_agent_node(state: AgentState, config: RunnableConfig) -> Dict[
             return {
                 "response_text": f"⚠️ **Invoice creation error:** {str(err)}",
                 "document_type": None,
+            }
+
+
+async def catalog_agent_node(state: AgentState, config: RunnableConfig) -> Dict[str, Any]:
+    """Node: Handles read-only price, rate, stock, and catalog listing queries."""
+    tenant_id = uuid.UUID(state["tenant_id"])
+    entities = state.get("extracted_entities", {})
+    item_query = entities.get("catalog_item_name")
+
+    async with _get_session(config) as session:
+        if item_query:
+            details = await lookup_catalog_item_details(session, tenant_id, item_query)
+            if details["found"]:
+                hsn_str = f" (HSN: {details['hsn_code']})" if details.get("hsn_code") else ""
+                response_text = (
+                    f"**{details['name']}**{hsn_str}:\n"
+                    f"• Unit Price: ₹{details['unit_price']:.2f} per {details['unit']}\n"
+                    f"• GST Rate: {details['gst_rate_percent']:.0f}%\n"
+                    f"• Stock Available: {details['stock_available']:.2f} {details['unit']}"
+                )
+                return {
+                    "response_text": response_text,
+                    "document_type": None,
+                    "data": details,
+                }
+            else:
+                return {
+                    "response_text": f"Item **'{item_query}'** was not found in your catalog. Please check the item name.",
+                    "document_type": None,
+                }
+        else:
+            summary = await list_catalog_summary(session, tenant_id, limit=6)
+            lines = [f"Here are items from your catalog ({summary['total_count']} total):"]
+            for item in summary["displayed_items"]:
+                lines.append(f"• **{item['name']}** — ₹{item['unit_price']:.2f}/{item['unit']} ({item['gst_rate_percent']:.0f}% GST) | Stock: {item['stock_available']} {item['unit']}")
+            if summary["has_more"]:
+                lines.append(f"\n_Showing first 6 of {summary['total_count']} items._")
+            
+            return {
+                "response_text": "\n".join(lines),
+                "document_type": None,
+                "data": summary,
             }
 
 
@@ -293,6 +382,7 @@ def create_agent_graph() -> Any:
     workflow.add_node("classify_intent", classify_intent_node)
     workflow.add_node("quotation_agent", quotation_agent_node)
     workflow.add_node("invoice_agent", invoice_agent_node)
+    workflow.add_node("catalog_agent", catalog_agent_node)
     workflow.add_node("clarify_agent", clarify_agent_node)
     workflow.add_node("out_of_scope_agent", out_of_scope_agent_node)
     workflow.add_node("log_conversation", log_conversation_node)
@@ -305,6 +395,7 @@ def create_agent_graph() -> Any:
         {
             "quotation_agent": "quotation_agent",
             "invoice_agent": "invoice_agent",
+            "catalog_agent": "catalog_agent",
             "clarify_agent": "clarify_agent",
             "out_of_scope_agent": "out_of_scope_agent",
         },
@@ -312,6 +403,7 @@ def create_agent_graph() -> Any:
 
     workflow.add_edge("quotation_agent", "log_conversation")
     workflow.add_edge("invoice_agent", "log_conversation")
+    workflow.add_edge("catalog_agent", "log_conversation")
     workflow.add_edge("clarify_agent", "log_conversation")
     workflow.add_edge("out_of_scope_agent", "log_conversation")
     workflow.add_edge("log_conversation", END)

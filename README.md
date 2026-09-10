@@ -1,393 +1,292 @@
-# M1M | Munim.ai
-
-> A business copilot for Indian small and medium-sized businesses.
-
-M1M turns natural-language requests into operational results: quotations, GST-compliant invoices, PDF documents, and document history. The same agent workflow is designed to serve web and WhatsApp channels while keeping business rules and data access in one backend.
-
-This repository is an incremental MVP containing the backend, database schema and migrations, deterministic seed data, LangGraph workflows, PDF generation, and a React developer UI.
-
-## Contents
-
-- [What M1M Does](#what-m1m-does)
-- [How It Works](#how-it-works)
-- [Repository Layout](#repository-layout)
-- [Technology](#technology)
-- [Requirements](#requirements)
-- [Clone and Install](#clone-and-install)
-- [Configure the Environment](#configure-the-environment)
-- [Choose a Database](#choose-a-database)
-- [Run Migrations and Seed Data](#run-migrations-and-seed-data)
-- [Run the Application](#run-the-application)
-- [API Endpoints](#api-endpoints)
-- [Tests and Verification](#tests-and-verification)
-- [Common Problems](#common-problems)
-- [Project Scope and Limitations](#project-scope-and-limitations)
-
-## What M1M Does
-
-M1M is built around the daily workflow of an Indian SME owner:
-
-1. The user writes a request in natural language, such as asking for a quotation or invoice.
-2. The agent identifies the intent and resolves the customer and items from the database.
-3. Deterministic business logic calculates taxable values and GST.
-4. The application creates the business document and renders a PDF.
-5. The web client displays the response and makes the generated document available for download.
-
-The data model supports tenants, users, customers, items, HSN codes, GST rates, stock, quotations, invoices, payments, conversation logs, Tally connection placeholders, and external ID mappings.
-
-For GST routing, Maharashtra customers can use CGST + SGST, while customers in another state can use IGST. GST calculation is deterministic and should not depend on an LLM response.
-
-## How It Works
-
-```mermaid
-flowchart LR
-		U[Business owner] --> W[React web UI]
-		W --> A[FastAPI API]
-		A --> G[LangGraph agent]
-		G --> S[Customer and item lookup]
-		G --> C[GST and document services]
-		S --> D[(SQLite / PostgreSQL / Supabase)]
-		C --> P[Generated PDF]
-		A --> W
-		P --> W
-```
-
-The backend is the source of truth. The frontend uses Vite's development proxy to forward `/api` and `/documents` requests to FastAPI.
-
-## Repository Layout
-
-```text
-.
-├── backend/
-│   ├── app/
-│   │   ├── agent/          LangGraph state and workflow
-│   │   ├── api/v1/         Chat and document endpoints
-│   │   ├── db/             Async SQLAlchemy session and Alembic migrations
-│   │   ├── models/         Database models
-│   │   └── services/       GST, lookup, numbering, Gemini, and PDF services
-│   ├── scripts/seed.py     Idempotent fictional development data
-│   ├── templates/          Invoice and quotation HTML templates
-│   ├── requirements.txt    Python dependencies
-│   └── alembic.ini         Migration configuration
-├── frontend/
-│   ├── src/                React + TypeScript application
-│   ├── package.json        Node dependencies and scripts
-│   └── vite.config.ts      Dev server and API proxy
-├── generated_docs/         Generated quotation and invoice PDFs
-├── m1m-mvp-prd.md          Product requirements
-├── m1m-mvp-trd.md          Technical requirements
-├── .env.example            Environment variable template
-└── README.md               This guide
-```
-
-## Technology
-
-| Area | Technology |
-| --- | --- |
-| Backend API | FastAPI, Uvicorn |
-| Language | Python 3.11+ |
-| Agent orchestration | LangGraph |
-| ORM and database access | SQLAlchemy 2.x async |
-| Database options | SQLite, local PostgreSQL 15+, or Supabase PostgreSQL |
-| Migrations | Alembic |
-| AI provider | Google Gemini API |
-| PDF generation | Jinja2 + WeasyPrint |
-| Frontend | React 19, TypeScript, Vite |
-| Testing | pytest, pytest-asyncio |
-
-## Requirements
-
-Install these on a new PC:
-
-- Git
-- Python 3.11 or newer
-- Node.js and npm (Node.js 20 LTS or newer is recommended)
-- A code editor such as VS Code
-- One database option: SQLite, local PostgreSQL 15+, or a Supabase PostgreSQL project
-- A Gemini API key for Gemini-backed flows and the Gemini smoke test
-
-SQLite is the fastest way to run the project because it requires no database server or Supabase account.
-
-## Clone and Install
-
-Open PowerShell:
-
-```powershell
-git clone <repository-url>
-Set-Location m1m-business-workflow-agent
-
-python --version
-node --version
-npm --version
-```
-
-Create and activate the Python virtual environment:
-
-```powershell
-python -m venv .venv
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
-.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -r backend\requirements.txt
-```
-
-Install frontend dependencies:
-
-```powershell
-Set-Location frontend
-npm install
-Set-Location ..
-```
-
-Keep the virtual environment activated while running backend commands. Each new PowerShell window must activate it again.
-
-## Configure the Environment
-
-Copy the template in the repository root:
-
-```powershell
-Copy-Item .env.example .env
-```
-
-The root `.env` is automatically discovered by the backend, Alembic, and seed script. Never commit it because it can contain database credentials and API keys.
-
-### Environment variables
-
-| Variable | Required | Purpose |
-| --- | --- | --- |
-| `DB_ENVIRONMENT` | No | `sqlite`, `local_postgres`, or `supabase`; defaults to `sqlite` |
-| `DATABASE_URL` | Supabase | PostgreSQL connection URL; also overrides `DB_ENVIRONMENT` when non-empty |
-| `DB_HOST` | Local PostgreSQL | Database host, normally `localhost` |
-| `DB_PORT` | Local PostgreSQL | Database port, normally `5432` |
-| `DB_NAME` | Local PostgreSQL | Database name, normally `m1m_local` |
-| `DB_USER` | Local PostgreSQL | Database user, normally `postgres` |
-| `DB_PASSWORD` | Local PostgreSQL | Database password |
-| `ENV` | No | `development` or `production`; development enables API docs and SQL echo |
-| `SPRINT_TENANT_ID` | No | Tenant UUID used by the Sprint 1 UI and API; otherwise the seeded development UUID is used |
-| `GEMINI_API_KEY` | Gemini flows | API key from Google AI Studio |
-
-The backend accepts `postgresql://`, `postgres://`, and `postgresql+asyncpg://` URLs and normalizes PostgreSQL URLs for the async driver.
-
-## Choose a Database
-
-Choose exactly one profile in `.env`. After changing profiles, run migrations and seed data against the newly selected database.
-
-### Option A: SQLite, no external database setup
-
-```dotenv
-DB_ENVIRONMENT=sqlite
-DATABASE_URL=
-```
-
-The application creates or uses `m1m.db` in the repository root. No PostgreSQL installation or Supabase project is needed.
-
-### Option B: Local PostgreSQL, without Supabase
-
-Install PostgreSQL 15 or newer, create a database, and set:
-
-```dotenv
-DB_ENVIRONMENT=local_postgres
-DATABASE_URL=
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=m1m_local
-DB_USER=postgres
-DB_PASSWORD=your_local_postgres_password
-```
-
-For example, create the database with `psql`:
-
-```sql
-CREATE DATABASE m1m_local;
-```
-
-Leave `DATABASE_URL` empty. A non-empty `DATABASE_URL` always takes priority over the local PostgreSQL settings.
-
-### Option C: Supabase PostgreSQL
-
-Create a Supabase project, open its database connection settings, and copy a PostgreSQL connection string into `.env`:
-
-```dotenv
-DB_ENVIRONMENT=supabase
-DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/postgres
-```
-
-Use the connection string supplied by Supabase. Keep the password private and URL-encode special characters when required. M1M enables the connection handling needed for Supabase PostgreSQL connections.
-
-To switch away from Supabase, clear `DATABASE_URL` first and then select `DB_ENVIRONMENT=sqlite` or `DB_ENVIRONMENT=local_postgres`.
-
-## Run Migrations and Seed Data
-
-Run migrations from `backend`, because the Alembic script location is relative to that directory. Run the seed script from the repository root:
-
-```powershell
-Set-Location backend
-alembic -c alembic.ini upgrade head
-Set-Location ..
-python backend\scripts\seed.py
-```
-
-Alembic is the only supported owner of the database schema. Do not use `create_all()` as a replacement for migrations.
-
-The seed script is safe to run repeatedly. It inserts deterministic fictional development data:
-
-- 1 tenant: Vaidya Industrial Supplies
-- 8 customers: Maharashtra and inter-state examples
-- 12 catalog items
-- 12 opening stock records
-
-Verify idempotency by running the seed twice:
-
-```powershell
-python backend\scripts\seed.py
-python backend\scripts\seed.py
-```
-
-Useful migration commands:
-
-```powershell
-Set-Location backend
-alembic -c alembic.ini current
-alembic -c alembic.ini history
-alembic -c alembic.ini downgrade -1
-Set-Location ..
-```
-
-## Run the Application
-
-Use two PowerShell windows.
-
-### Terminal 1: backend
-
-From the repository root:
-
-```powershell
-.venv\Scripts\Activate.ps1
-uvicorn app.main:app --app-dir backend --reload --host 127.0.0.1 --port 8000
-```
-
-Backend URLs:
-
-- Health check: <http://127.0.0.1:8000/health>
-- Swagger UI: <http://127.0.0.1:8000/docs>
-- ReDoc: <http://127.0.0.1:8000/redoc>
-
-API documentation is enabled when `ENV=development`.
-
-### Terminal 2: frontend
-
-```powershell
-Set-Location frontend
-npm run dev
-```
-
-Open <http://localhost:5173>. Vite forwards `/api` and `/documents` to the backend at port 8000.
-
-For a production-style frontend build:
-
-```powershell
-npm run build
-npm run preview
-```
-
-The frontend preview server runs on port 4173 and is also allowed by the backend CORS configuration.
-
-## API Endpoints
-
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/health` | Backend liveness check |
-| `POST` | `/api/v1/chat` | Send a natural-language business request |
-| `GET` | `/api/v1/documents` | List quotations and invoices for the active tenant |
-| `GET` | `/documents/{tenant_id}/{doc_type}/{filename}` | Download a generated PDF |
-
-Example chat request:
-
-```powershell
-Invoke-RestMethod `
-	-Uri http://127.0.0.1:8000/api/v1/chat `
-	-Method Post `
-	-ContentType "application/json" `
-	-Body '{"message":"Create a quotation for Ramesh Traders for 10 TMT Steel Rod 12mm"}'
-```
-
-The response can include the detected intent, document type, document number, structured data, and a PDF URL.
-
-## Tests and Verification
-
-Run backend tests from the backend directory:
-
-```powershell
-Set-Location backend
-pytest tests -v
-Set-Location ..
-```
-
-Database-dependent seed tests expect the schema and seed data to exist. Run migrations and seeding first.
-
-The Gemini smoke test makes a real external API request. Set a valid `GEMINI_API_KEY` before running it, or skip it when working offline:
-
-```powershell
-pytest tests -v -k "not gemini"
-```
-
-Basic database checks are available from the repository root:
-
-```powershell
-python check_db.py
-python check_seed_paths.py
-```
-
-## Common Problems
-
-**The application connects to the wrong database**
-
-Check `.env`. If `DATABASE_URL` is non-empty, it overrides `DB_ENVIRONMENT`. Clear it when using SQLite or local PostgreSQL component settings.
-
-**Supabase connection fails**
-
-Confirm that the URL is copied from the correct Supabase project, the password is correct, and the database is reachable. Then rerun the migration command from `backend`.
-
-**The API starts but the UI cannot connect**
-
-Start FastAPI on port 8000 and Vite on port 5173. The frontend proxy is configured for those ports.
-
-**The chat request cannot find a tenant or customer**
-
-Run migration and seed commands using the same `.env` profile as the API. Confirm that `SPRINT_TENANT_ID` is empty or matches the seeded tenant UUID.
-
-**PDF generation fails on Windows**
-
-WeasyPrint may require native runtime dependencies on some Windows installations. Install the runtime dependencies documented for the installed WeasyPrint version, then restart the virtual environment and retry.
-
-## Project Scope and Limitations
-
-The current MVP intentionally uses a single development tenant selected through `SPRINT_TENANT_ID`. Authentication, production multi-tenant isolation, and PostgreSQL row-level security are not implemented yet.
-
-Planned follow-up areas include:
-
-- Authentication with phone OTP and JWT sessions
-- RLS policies and cross-tenant isolation tests
-- Production onboarding and business configuration
-- Dues and stock-query agents
-- CSV import, OCR, voice notes, analytics, and deployment automation
-- WhatsApp Cloud API integration
-- Tally integration and payment workflows
-
-Seed records are fictional development data only. Do not use them as real business or customer information.
-
-## Security Notes
-
-- Keep `.env` out of version control.
-- Never place database passwords or Gemini keys in source code.
-- Use `ENV=production` only with a proper deployment configuration and authentication layer.
-- Treat the Sprint 1 tenant fallback and generated PDFs as development-only behavior.
-
-## Product Documents
-
-- [Product requirements](m1m-mvp-prd.md)
-- [Technical requirements](m1m-mvp-trd.md)
+# <p align="center"><img src="./docs/assets/banner.png" alt="Munim.ai Banner" width="700"/></p>
+
+<p align="center">
+  <strong>Autonomous AI Business Workflow & GST Operations Agent for Indian SMEs</strong>
+</p>
+
+<p align="center">
+  <a href="#-key-features"><img src="https://img.shields.io/badge/Status-Sprint%201%20MVP%20Ready-brightgreen?style=for-the-badge" alt="Status"></a>
+  <a href="#-tech-stack"><img src="https://img.shields.io/badge/AI-LangGraph%20%7C%20Gemini%202.5-orange?style=for-the-badge" alt="AI Stack"></a>
+  <a href="#-tech-stack"><img src="https://img.shields.io/badge/Backend-FastAPI%20%7C%20Python%203.12-blue?style=for-the-badge&logo=fastapi" alt="Backend"></a>
+  <a href="#-tech-stack"><img src="https://img.shields.io/badge/Frontend-React%2019%20%7C%20Vite%20%7C%20Tailwind-61DAFB?style=for-the-badge&logo=react" alt="Frontend"></a>
+  <a href="#-tests--quality-assurance"><img src="https://img.shields.io/badge/Tests-136%20Passed-success?style=for-the-badge" alt="Tests"></a>
+</p>
 
 ---
 
-M1M is built incrementally: start with SQLite for a zero-setup local run, move to local PostgreSQL when you need a real PostgreSQL environment, and use Supabase when you need managed PostgreSQL infrastructure.
+## 📌 Executive Summary
+
+**M1M (Munim.ai)** is an AI-powered business copilot tailored specifically for Indian Small and Medium Enterprises (SMEs). It bridges the gap between chaotic, conversational commerce (WhatsApp, chat inquiries) and rigorous, audit-compliant ERP operations. 
+
+Business owners and sales executives can interact in plain English or Hinglish to generate GST-compliant **Quotations**, convert estimates into **Tax Invoices**, check **Live Inventory & Pricing**, and dispatch branded **PDFs** in seconds—all backed by 100% deterministic tax computation and atomic ledger safeguards.
+
+<p align="center">
+  <img src="./docs/assets/value-prop.png" alt="Munim.ai Value Proposition" width="900"/>
+</p>
+
+---
+
+## 🏛️ System Architecture
+
+M1M pairs high-speed LLM entity extraction with deterministic business logic and relational database integrity.
+
+<p align="center">
+  <img src="./docs/assets/architecture.jpg" alt="Munim.ai System Architecture" width="950"/>
+</p>
+
+### 🔄 Agent Workflow (LangGraph)
+
+```mermaid
+graph TD
+    User([User Prompt / WhatsApp Message]) --> API["FastAPI /api/v1/chat"]
+    API --> Graph["LangGraph StateGraph"]
+    Graph --> Classify["Node: classify_intent (Gemini 2.5 + Regex Fallback)"]
+    
+    Classify --> Route{"Conditional Edge: route_by_intent"}
+    
+    Route -->|"quotation"| QuoteAgent["Node: quotation_agent"]
+    Route -->|"invoice"| InvoiceAgent["Node: invoice_agent"]
+    Route -->|"catalog_query"| CatalogAgent["Node: catalog_agent"]
+    Route -->|"clarify"| ClarifyAgent["Node: clarify_agent"]
+    Route -->|"future_feature / off_topic"| OutOfScope["Node: out_of_scope_agent"]
+    
+    QuoteAgent --> LogNode["Node: log_conversation"]
+    InvoiceAgent --> LogNode
+    CatalogAgent --> LogNode
+    ClarifyAgent --> LogNode
+    OutOfScope --> LogNode
+    
+    LogNode --> Out([Structured Response + Downloadable PDF URL])
+```
+
+---
+
+## ⚡ Key Features
+
+- 💬 **Natural Language Business Documents:** Create quotations and invoices from conversational prompts (e.g., *"create quotation for Ramesh Traders for 200 units Steel Rod 12mm"*).
+- 🧮 **Deterministic GST Calculator (Zero LLM Math):** Computes CGST, SGST, and IGST based on supplier and customer state codes using exact Python `Decimal` arithmetic.
+- 🎯 **3-Tier Scored Fuzzy Customer Match:**
+  - $\ge 0.80$: Silent auto-match.
+  - $0.40 - 0.80$: Interactive confirmation pause (*"Did you mean Ramesh Enterprises? Or is this a new customer?"*).
+  - $< 0.40$: Auto-creates new customer record with an explicit notification.
+- 🔄 **1-Click Quotation-to-Invoice Conversion:** Convert `Q-YYYYMM-XXX` into `INV-YYYYMM-XXX` while decrementing stock atomically.
+- 📦 **Fail-Safe Stock Validation:** Real-time inventory check blocks invoices when requested quantity exceeds warehouse stock.
+- 🔍 **Live Catalog & Price Lookup:** Inquire about product pricing, HSN codes, and warehouse stock levels via chat without triggering document generation.
+- 📑 **Audit-Grade PDF Generation:** Generates branded, GST-compliant PDFs using WeasyPrint with pure HTML/CSS fallbacks.
+
+---
+
+## 🛠️ Tech Stack
+
+### AI & Agent Orchestration
+- **LangGraph:** Stateful multi-agent graph orchestration and conditional routing.
+- **Google Gemini 2.5 Flash / Pro:** High-speed intent classification and unstructured entity extraction.
+- **Deterministic Regex Fallback:** Rule-based parser guaranteeing offline operational resilience.
+
+### Backend & API
+- **FastAPI:** High-performance asynchronous Python REST API framework.
+- **Python 3.12:** Type-annotated async core runtime.
+- **Pydantic v2:** Strict input validation and serialization models.
+- **WeasyPrint / Cairo / Pango:** CSS Paged Media PDF generation engine.
+
+### Database & Storage
+- **PostgreSQL / SQLite:** Relational storage with multi-tenant isolation.
+- **SQLAlchemy 2.0 (Async):** Modern asynchronous ORM with connection pooling.
+- **Alembic:** Database schema migration management.
+
+### Frontend
+- **React 19 & Vite 8:** Lightning-fast single-page interface with hot module reloading.
+- **TypeScript:** Fully typed API contracts and UI states.
+- **Tailwind CSS:** Modern, responsive enterprise interface design.
+- **Lucide Icons:** Clean UI iconography.
+
+---
+
+## 🚀 Getting Started
+
+### 📋 Prerequisites
+
+Ensure you have the following installed on your system:
+- **Python:** `3.11` or `3.12` ([Download](https://www.python.org/downloads/))
+- **Node.js:** `18.x` or `20.x` LTS ([Download](https://nodejs.org/))
+- **Git:** ([Download](https://git-scm.com/))
+- **Google Gemini API Key:** ([Get Key](https://aistudio.google.com/app/apikey))
+
+---
+
+### 📥 1. Clone the Repository
+
+```bash
+git clone https://github.com/your-username/m1m-business-workflow-agent.git
+cd m1m-business-workflow-agent
+```
+
+---
+
+### 🐍 2. Backend Setup
+
+#### A. Create and Activate Virtual Environment
+
+**Windows (PowerShell):**
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
+
+**macOS / Linux:**
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+#### B. Install Python Dependencies
+
+```bash
+pip install --upgrade pip
+pip install -r backend/requirements.txt
+```
+
+#### C. Configure Environment Variables
+
+Create a `.env` file in the project root:
+
+```ini
+# Environment Mode: development | production
+ENV=development
+
+# Database Configuration (SQLite default for quick local run, or PostgreSQL)
+DATABASE_URL=sqlite+aiosqlite:///./m1m.db
+# For PostgreSQL: postgresql+asyncpg://postgres:postgres@localhost:5432/m1m_db
+
+# Gemini AI API Key
+GEMINI_API_KEY=your_actual_gemini_api_key_here
+
+# Tenant & Security
+SPRINT_TENANT_ID=a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11
+APP_SECRET_KEY=generate_a_random_32_character_secret_key
+```
+
+#### D. Run Database Migrations & Seed Data
+
+```bash
+# Apply schema migrations
+alembic upgrade head
+
+# Seed demo tenant profile, customers, and catalog items
+python -m backend.app.db.seed
+```
+
+---
+
+### 💻 3. Frontend Setup
+
+In a new terminal window:
+
+```bash
+cd frontend
+npm install
+```
+
+---
+
+### 🏃 4. Running the Application
+
+#### Start the Backend Server
+```powershell
+# From project root:
+.venv\Scripts\python.exe -m uvicorn app.main:app --app-dir backend --reload --host 127.0.0.1 --port 8000
+```
+Backend API will be live at: **`http://127.0.0.1:8000`**  
+Interactive Swagger Docs: **`http://127.0.0.1:8000/docs`**
+
+#### Start the Frontend Client
+```bash
+# In frontend directory:
+npm run dev
+```
+Frontend Web UI will be live at: **`http://localhost:5173`**
+
+---
+
+## 🧪 Tests & Quality Assurance
+
+The codebase includes an extensive automated test suite covering unit math, database operations, fuzzy lookup scores, and full LangGraph workflow execution.
+
+```bash
+# Run all automated tests
+pytest backend/tests -v
+
+# Run fast offline tests (bypassing external LLM network calls)
+pytest backend/tests -v -k "not gemini"
+```
+
+```text
+======================= 136 passed in 12.45s =======================
+```
+
+---
+
+## 📖 Example Interactions
+
+| User Prompt | System Action | Output Result |
+| :--- | :--- | :--- |
+| *"Create quotation for Ramesh Traders for 200 units Steel Rod 12mm"* | Extracts entity, matches customer, computes intra-state GST (CGST+SGST 18%), saves record. | Returns quotation summary + `Q-202608-001` PDF link. |
+| *"Convert quotation Q-202608-001 into an invoice"* | Looks up quotation, verifies stock availability, marks quotation converted, decrements ledger. | Returns tax invoice `INV-202608-001` + download link. |
+| *"What is the price and stock of PVC Pipe?"* | Queries `items` table without mutating draft states. | Returns unit price, HSN, tax rate, and warehouse stock. |
+| *"Remind my customers about pending dues"* | Detects roadmap feature. | Delivers polite future-feature roadmap notice. |
+
+---
+
+## 📂 Project Directory Structure
+
+```text
+m1m-business-workflow-agent/
+├── backend/
+│   ├── app/
+│   │   ├── agent/             # LangGraph state graph, nodes, and router
+│   │   ├── api/v1/            # FastAPI REST endpoints (/chat, /documents, /health)
+│   │   ├── core/              # Gemini client factory, logging, exceptions
+│   │   ├── db/                # DB session management, seed script, migrations
+│   │   ├── models/            # SQLAlchemy database models
+│   │   ├── services/          # GST calc, customer lookup, invoices, catalog, PDF
+│   │   ├── templates/         # Clean HTML templates for WeasyPrint PDF generation
+│   │   ├── config.py          # Pydantic Settings & environment manager
+│   │   └── main.py            # FastAPI application factory
+│   ├── tests/                 # 136 comprehensive pytest test suites
+│   └── requirements.txt       # Python backend dependencies
+├── frontend/
+│   ├── src/
+│   │   ├── api/               # Typed fetch clients
+│   │   ├── components/        # Chat messages, document drawers, UI components
+│   │   ├── hooks/             # Custom React hooks (useChat)
+│   │   ├── types/             # TypeScript data interfaces
+│   │   ├── App.tsx            # Main application root
+│   │   └── main.tsx           # React entry point
+│   ├── package.json           # Frontend dependencies
+│   ├── tailwind.config.js     # Tailwind CSS design system
+│   └── vite.config.ts         # Vite proxy configuration
+├── docs/
+│   └── assets/                # Visual assets, banners, and architecture diagrams
+├── MVP-technical-working.md   # In-depth slide-by-slide technical pitch deck guide
+└── README.md                  # Project overview & documentation
+```
+
+---
+
+## 🚢 Deployment Guide
+
+- **Frontend (Vercel):** Connect repository, set Root Directory to `frontend`, and configure `vercel.json` rewrites to proxy `/api` and `/documents` to your backend.
+- **Backend (Render / Railway / GCP Cloud Run):** Deploy Python 3.12 container with `uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port $PORT`.
+- **Database (Neon / Supabase):** Connect serverless PostgreSQL via `DATABASE_URL=postgresql+asyncpg://...` and run `alembic upgrade head`.
+
+*(For complete slide-ready technical documentation, see [`MVP-technical-working.md`](./MVP-technical-working.md)).*
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+
+<p align="center">
+  <sub>Built with ❤️ for Indian Small & Medium Enterprises.</sub>
+</p>

@@ -83,7 +83,8 @@ async def create_direct_invoice(
         raise ValueError(f"Tenant {tenant_id} not found.")
 
     supplier_state = tenant.state
-    customer_state = customer.state or tenant.state
+    state_assumed = customer.state is None or customer.state.strip() == ""
+    customer_state = customer.state if not state_assumed else tenant.state
 
     # 1. Stock Check Phase (Fail-fast before any modification)
     for item, qty in items_with_qty:
@@ -206,6 +207,13 @@ async def create_direct_invoice(
         f"• Stock decremented successfully."
     )
 
+    if state_assumed:
+        response_text += (
+            f"\n\n_Note: I don't have **{customer.name}**'s state on file, "
+            "so I've calculated this as an intra-state invoice — "
+            "let me know their state if that's not right._"
+        )
+
     return {
         "invoice_id": str(invoice.id),
         "invoice_number": inv_num,
@@ -217,6 +225,7 @@ async def create_direct_invoice(
         "igst_amount": float(totals["igst_amount"]),
         "total_tax": float(totals["total_tax"]),
         "total_amount": float(totals["total_amount"]),
+        "state_assumed": state_assumed,
         "pdf_url": pdf_url,
         "lines": line_records,
         "response_text": response_text,
@@ -306,11 +315,18 @@ async def convert_quotation_to_invoice(
 
     inv_data["quotation_id"] = str(quotation.id)
     inv_data["quotation_number"] = quotation.quotation_number
-    inv_data["response_text"] = (
+    response_text = (
         f"Quotation **{quotation.quotation_number}** successfully converted to Tax Invoice **{inv_data['invoice_number']}** for **{customer.name}**.\n"
         f"• Total Amount: ₹{inv_data['total_amount']:.2f}\n"
         f"• Stock decremented.\n"
         f"• Quotation status updated to 'converted'."
     )
+    if inv_data.get("state_assumed"):
+        response_text += (
+            f"\n\n_Note: I don't have **{customer.name}**'s state on file, "
+            "so I've calculated this as an intra-state invoice — "
+            "let me know their state if that's not right._"
+        )
+    inv_data["response_text"] = response_text
 
     return inv_data
