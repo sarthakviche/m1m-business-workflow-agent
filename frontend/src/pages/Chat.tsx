@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
+import { API_BASE, TEST_PHONE } from '../api/config';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -15,8 +16,8 @@ interface Message {
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const API_BASE = 'http://127.0.0.1:8000'
-const PHONE = '9876543210'
+
+const PHONE = TEST_PHONE
 
 const QUICK_ACTIONS = [
   { label: 'Show customers', query: 'show my customers' },
@@ -418,11 +419,11 @@ export default function Chat() {
         try {
           invoiceRes = await fetch(`${API_BASE}/invoices/?phone=${PHONE}`)
           if (!invoiceRes.ok) {
-            invoiceRes = await fetch(`http://localhost:8000/invoices/?phone=${PHONE}`)
+            invoiceRes = await fetch(`/invoices/?phone=${PHONE}`)
           }
         } catch {
           try {
-            invoiceRes = await fetch(`http://localhost:8000/invoices/?phone=${PHONE}`)
+            invoiceRes = await fetch(`/invoices/?phone=${PHONE}`)
           } catch {
             invoiceRes = null
           }
@@ -507,11 +508,11 @@ export default function Chat() {
         try {
           quotationRes = await fetch(`${API_BASE}/quotations/?phone=${PHONE}`)
           if (!quotationRes.ok) {
-            quotationRes = await fetch(`http://localhost:8000/quotations/?phone=${PHONE}`)
+            quotationRes = await fetch(`/quotations/?phone=${PHONE}`)
           }
         } catch {
           try {
-            quotationRes = await fetch(`http://localhost:8000/quotations/?phone=${PHONE}`)
+            quotationRes = await fetch(`/quotations/?phone=${PHONE}`)
           } catch {
             quotationRes = null
           }
@@ -589,7 +590,7 @@ export default function Chat() {
       })
 
       if (!res.ok) {
-        res = await fetch('http://localhost:8000/chat/message', {
+        res = await fetch('/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ message: query, phone: PHONE }),

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { API_BASE, TEST_PHONE } from '../api/config';
 
 interface Metrics {
   total_customers: number
@@ -14,7 +15,7 @@ interface Metrics {
   overdue_invoices_count: number
 }
 
-const API_BASE = 'http://127.0.0.1:8000'
+
 
 export default function Dashboard() {
   const [metrics, setMetrics] = useState<Metrics | null>(null)
@@ -22,7 +23,7 @@ export default function Dashboard() {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    fetch(`${API_BASE}/dashboard/summary?phone=9876543210`)
+    fetch(`${API_BASE}/dashboard/summary?phone=`)
       .then(res => {
         if (!res.ok) throw new Error(`HTTP error ${res.status}`)
         return res.json()
@@ -33,14 +34,14 @@ export default function Dashboard() {
       })
       .catch(() => {
         // Fallback to localhost if 127.0.0.1 fails
-        fetch('http://localhost:8000/dashboard/summary?phone=9876543210')
+        fetch('/dashboard/summary?phone=')
           .then(res => res.json())
           .then(data => {
             setMetrics(data)
             setLoading(false)
           })
           .catch(() => {
-            setError('Failed to connect to backend at http://127.0.0.1:8000 or http://localhost:8000')
+            setError('Failed to connect to backend at http://127.0.0.1:8000 or ')
             setLoading(false)
           })
       })
@@ -51,7 +52,7 @@ export default function Dashboard() {
       <header style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
         <div>
           <h1 style={{ margin: 0, fontSize: '28px', color: '#38bdf8' }}>Munim.ai Dashboard</h1>
-          <p style={{ margin: '4px 0 0', color: '#94a3b8' }}>WhatsApp + Web SME Business Copilot (Tenant Phone: 9876543210)</p>
+          <p style={{ margin: '4px 0 0', color: '#94a3b8' }}>WhatsApp + Web SME Business Copilot (Tenant Phone: )</p>
         </div>
         <a href="/chat" style={{ background: 'linear-gradient(135deg, #0284c7, #2563eb)', color: '#fff', padding: '10px 20px', borderRadius: '8px', textDecoration: 'none', fontWeight: 600 }}>Open Copilot Chat</a>
       </header>

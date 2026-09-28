@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { API_BASE, TEST_PHONE } from '../api/config';
 
 interface Invoice {
   id: string
@@ -17,7 +18,7 @@ interface Quotation {
   status: string
 }
 
-const API_BASE = 'http://127.0.0.1:8000'
+
 
 export default function Documents() {
   const [activeTab, setActiveTab] = useState<'invoices' | 'quotations'>('invoices')
@@ -30,7 +31,7 @@ export default function Documents() {
     setLoading(true)
     setError('')
     if (activeTab === 'invoices') {
-      fetch(`${API_BASE}/invoices/?phone=9876543210`)
+      fetch(`${API_BASE}/invoices/?phone=`)
         .then(res => {
           if (!res.ok) throw new Error(`HTTP ${res.status}`)
           return res.json()
@@ -40,7 +41,7 @@ export default function Documents() {
           setLoading(false)
         })
         .catch(() => {
-          fetch('http://localhost:8000/invoices/?phone=9876543210')
+          fetch('/invoices/?phone=')
             .then(res => res.json())
             .then(data => {
               setInvoices(data)
@@ -52,7 +53,7 @@ export default function Documents() {
             })
         })
     } else {
-      fetch(`${API_BASE}/quotations/?phone=9876543210`)
+      fetch(`${API_BASE}/quotations/?phone=`)
         .then(res => {
           if (!res.ok) throw new Error(`HTTP ${res.status}`)
           return res.json()
@@ -62,7 +63,7 @@ export default function Documents() {
           setLoading(false)
         })
         .catch(() => {
-          fetch('http://localhost:8000/quotations/?phone=9876543210')
+          fetch('/quotations/?phone=')
             .then(res => res.json())
             .then(data => {
               setQuotations(data)
@@ -77,11 +78,11 @@ export default function Documents() {
   }, [activeTab])
 
   const downloadInvoicePdf = (invoiceId: string) => {
-    window.open(`${API_BASE}/invoices/${invoiceId}/pdf?phone=9876543210`, '_blank')
+    window.open(`${API_BASE}/invoices/${invoiceId}/pdf?phone=`, '_blank')
   }
 
   const downloadQuotationPdf = (quotationId: string) => {
-    window.open(`${API_BASE}/quotations/${quotationId}/pdf?phone=9876543210`, '_blank')
+    window.open(`${API_BASE}/quotations/${quotationId}/pdf?phone=`, '_blank')
   }
 
   return (

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { API_BASE, TEST_PHONE } from '../api/config';
 
 interface Customer {
   id: string
@@ -10,7 +11,7 @@ interface Customer {
   created_at: string
 }
 
-const API_BASE = 'http://127.0.0.1:8000'
+
 
 export default function Customers() {
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -18,7 +19,7 @@ export default function Customers() {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    fetch(`${API_BASE}/customers/?phone=9876543210`)
+    fetch(`${API_BASE}/customers/?phone=`)
       .then(res => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         return res.json()
@@ -28,7 +29,7 @@ export default function Customers() {
         setLoading(false)
       })
       .catch(() => {
-        fetch('http://localhost:8000/customers/?phone=9876543210')
+        fetch('/customers/?phone=')
           .then(res => res.json())
           .then(data => {
             setCustomers(data)

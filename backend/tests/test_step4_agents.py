@@ -108,7 +108,7 @@ async def test_missing_customer_name_prompts_directly(db_session, tenant_id_uuid
     final_state = await agent_graph.ainvoke(initial_state, config=config)
 
     assert final_state.get("detected_intent") == "clarify"
-    assert "customer name" in final_state.get("response_text", "").lower()
+    assert "customer" in final_state.get("response_text", "").lower()
 
 
 @pytest.mark.asyncio

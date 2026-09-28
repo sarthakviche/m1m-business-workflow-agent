@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { API_BASE, TEST_PHONE } from '../api/config';
 
 interface Item {
   id: string
@@ -9,7 +10,7 @@ interface Item {
   unit: string
 }
 
-const API_BASE = 'http://127.0.0.1:8000'
+
 
 export default function Inventory() {
   const [items, setItems] = useState<Item[]>([])
@@ -17,7 +18,7 @@ export default function Inventory() {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    fetch(`${API_BASE}/items/?phone=9876543210`)
+    fetch(`${API_BASE}/items/?phone=`)
       .then(res => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         return res.json()
@@ -27,7 +28,7 @@ export default function Inventory() {
         setLoading(false)
       })
       .catch(() => {
-        fetch('http://localhost:8000/items/?phone=9876543210')
+        fetch('/items/?phone=')
           .then(res => res.json())
           .then(data => {
             setItems(data)
