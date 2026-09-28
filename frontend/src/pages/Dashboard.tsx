@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { API_BASE, TEST_PHONE } from '../api/config';
+import { useApp } from '../context/AppContext'
+import { API_BASE, TEST_PHONE } from '../api/config'
 
 interface Metrics {
   total_customers: number
@@ -15,99 +16,111 @@ interface Metrics {
   overdue_invoices_count: number
 }
 
-
+function StatCard({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent: string }) {
+  return (
+    <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex flex-col gap-1">
+      <div className="flex items-center gap-2 mb-1">
+        <div className={`w-1 h-8 rounded-full ${accent}`} />
+        <span className="text-sm text-slate-500 font-medium">{label}</span>
+      </div>
+      <p className="text-2xl font-bold text-slate-900 font-display">{value}</p>
+      {sub && <p className="text-xs text-slate-400">{sub}</p>}
+    </div>
+  )
+}
 
 export default function Dashboard() {
+  const { businessName } = useApp()
   const [metrics, setMetrics] = useState<Metrics | null>(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
 
   useEffect(() => {
-    fetch(`${API_BASE}/dashboard/summary?phone=`)
-      .then(res => {
-        if (!res.ok) throw new Error(`HTTP error ${res.status}`)
-        return res.json()
-      })
-      .then(data => {
-        setMetrics(data)
-        setLoading(false)
-      })
-      .catch(() => {
-        // Fallback to localhost if 127.0.0.1 fails
-        fetch('/dashboard/summary?phone=')
-          .then(res => res.json())
-          .then(data => {
-            setMetrics(data)
-            setLoading(false)
-          })
-          .catch(() => {
-            setError('Failed to connect to backend at http://127.0.0.1:8000 or ')
-            setLoading(false)
-          })
-      })
+    fetch(`${API_BASE}/dashboard/summary?phone=${TEST_PHONE}`)
+      .then(r => r.json())
+      .then(d => { setMetrics(d); setLoading(false) })
+      .catch(() => setLoading(false))
   }, [])
 
+  const hour = new Date().getHours()
+  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
+
   return (
-    <div style={{ padding: '24px', fontFamily: 'Inter, system-ui, sans-serif', backgroundColor: '#0f172a', color: '#f8fafc', minHeight: '100vh' }}>
-      <header style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: '28px', color: '#38bdf8' }}>Munim.ai Dashboard</h1>
-          <p style={{ margin: '4px 0 0', color: '#94a3b8' }}>WhatsApp + Web SME Business Copilot (Tenant Phone: )</p>
+    <div className="p-5 md:p-8 max-w-5xl mx-auto">
+      {/* Header */}
+      <div className="mb-8">
+        <h1 className="text-2xl md:text-3xl font-display font-bold text-slate-900">
+          {greeting}, <span className="text-orange-500">{businessName}</span> 👋
+        </h1>
+        <p className="text-slate-500 mt-1 text-sm">Here's what's happening with your business today.</p>
+      </div>
+
+      {/* Quick Actions */}
+      <div className="flex gap-3 mb-8 flex-wrap">
+        <a
+          href="/chat"
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 text-white text-sm font-semibold shadow-md shadow-orange-200 hover:shadow-orange-300 transition-all"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z" />
+          </svg>
+          New Invoice via Chat
+        </a>
+        <a
+          href="/documents"
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl border border-orange-200 text-orange-600 text-sm font-semibold hover:bg-orange-50 transition-all"
+        >
+          View Documents
+        </a>
+      </div>
+
+      {/* Metrics */}
+      {loading ? (
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          {[1, 2, 3, 4, 5, 6].map(i => (
+            <div key={i} className="bg-white rounded-2xl p-5 h-28 animate-pulse border border-slate-100" />
+          ))}
         </div>
-        <a href="/chat" style={{ background: 'linear-gradient(135deg, #0284c7, #2563eb)', color: '#fff', padding: '10px 20px', borderRadius: '8px', textDecoration: 'none', fontWeight: 600 }}>Open Copilot Chat</a>
-      </header>
-
-      <nav style={{ display: 'flex', gap: '12px', marginBottom: '24px', flexWrap: 'wrap' }}>
-        <a href="/chat" style={{ color: '#fff', padding: '8px 16px', borderRadius: '6px', background: '#00a884', textDecoration: 'none', fontWeight: 600 }}>← M1M Chat</a>
-        <a href="/dashboard" style={{ color: '#38bdf8', padding: '8px 16px', borderRadius: '6px', background: '#1e293b', textDecoration: 'none', fontWeight: 600 }}>Dashboard</a>
-        <a href="/customers" style={{ color: '#94a3b8', padding: '8px 16px', borderRadius: '6px', textDecoration: 'none' }}>Customers</a>
-        <a href="/inventory" style={{ color: '#94a3b8', padding: '8px 16px', borderRadius: '6px', textDecoration: 'none' }}>Inventory</a>
-        <a href="/documents" style={{ color: '#94a3b8', padding: '8px 16px', borderRadius: '6px', textDecoration: 'none' }}>Invoices & Quotations</a>
-        <a href="/chat" style={{ color: '#94a3b8', padding: '8px 16px', borderRadius: '6px', textDecoration: 'none' }}>Copilot Chat</a>
-      </nav>
-
-      {loading && <div style={{ color: '#94a3b8', padding: '16px', background: '#1e293b', borderRadius: '8px' }}>Loading live backend database metrics...</div>}
-      {error && <div style={{ color: '#f87171', padding: '12px', background: '#450a0a', borderRadius: '6px' }}>{error}</div>}
-
-      {metrics && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px' }}>
-          <div style={{ background: '#1e293b', padding: '20px', borderRadius: '12px', border: '1px solid #334155' }}>
-            <span style={{ color: '#94a3b8', fontSize: '14px' }}>Total Sales</span>
-            <h2 style={{ fontSize: '32px', margin: '8px 0', color: '#4ade80' }}>₹{metrics.total_sales.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</h2>
-            <span style={{ color: '#64748b', fontSize: '12px' }}>Real PostgreSQL Sum</span>
-          </div>
-
-          <div style={{ background: '#1e293b', padding: '20px', borderRadius: '12px', border: '1px solid #334155' }}>
-            <span style={{ color: '#94a3b8', fontSize: '14px' }}>Outstanding Dues</span>
-            <h2 style={{ fontSize: '32px', margin: '8px 0', color: '#f87171' }}>₹{metrics.outstanding_amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</h2>
-            <span style={{ color: '#64748b', fontSize: '12px' }}>Invoiced - Payments</span>
-          </div>
-
-          <div style={{ background: '#1e293b', padding: '20px', borderRadius: '12px', border: '1px solid #334155' }}>
-            <span style={{ color: '#94a3b8', fontSize: '14px' }}>Total Received</span>
-            <h2 style={{ fontSize: '32px', margin: '8px 0', color: '#38bdf8' }}>₹{metrics.total_paid_amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</h2>
-            <span style={{ color: '#64748b', fontSize: '12px' }}>Payments Received</span>
-          </div>
-
-          <div style={{ background: '#1e293b', padding: '20px', borderRadius: '12px', border: '1px solid #334155' }}>
-            <span style={{ color: '#94a3b8', fontSize: '14px' }}>Invoices Breakdown</span>
-            <h3 style={{ fontSize: '20px', margin: '8px 0' }}>
-              <span style={{ color: '#4ade80' }}>{metrics.paid_invoices_count} Paid</span> | <span style={{ color: '#fbbf24' }}>{metrics.unpaid_invoices_count} Unpaid</span>
-            </h3>
-            <span style={{ color: '#f87171', fontSize: '12px' }}>{metrics.overdue_invoices_count} Overdue Invoices</span>
-          </div>
-
-          <div style={{ background: '#1e293b', padding: '20px', borderRadius: '12px', border: '1px solid #334155' }}>
-            <span style={{ color: '#94a3b8', fontSize: '14px' }}>Customers</span>
-            <h2 style={{ fontSize: '32px', margin: '8px 0', color: '#f472b6' }}>{metrics.total_customers}</h2>
-            <span style={{ color: '#64748b', fontSize: '12px' }}>Tenant Isolation Active</span>
-          </div>
-
-          <div style={{ background: '#1e293b', padding: '20px', borderRadius: '12px', border: '1px solid #334155' }}>
-            <span style={{ color: '#94a3b8', fontSize: '14px' }}>Catalog Items</span>
-            <h2 style={{ fontSize: '32px', margin: '8px 0', color: '#a78bfa' }}>{metrics.total_items}</h2>
-            <span style={{ color: '#64748b', fontSize: '12px' }}>Items & Stock</span>
-          </div>
+      ) : metrics ? (
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          <StatCard
+            label="Total Sales"
+            value={`₹${(metrics.total_sales || 0).toLocaleString('en-IN')}`}
+            sub="This financial year"
+            accent="bg-orange-500"
+          />
+          <StatCard
+            label="Outstanding Dues"
+            value={`₹${(metrics.outstanding_amount || 0).toLocaleString('en-IN')}`}
+            sub="Pending payments"
+            accent="bg-red-400"
+          />
+          <StatCard
+            label="Received"
+            value={`₹${(metrics.total_paid_amount || 0).toLocaleString('en-IN')}`}
+            sub="Payments collected"
+            accent="bg-green-400"
+          />
+          <StatCard
+            label="Customers"
+            value={String(metrics.total_customers || 0)}
+            accent="bg-violet-400"
+          />
+          <StatCard
+            label="Catalog Items"
+            value={String(metrics.total_items || 0)}
+            accent="bg-blue-400"
+          />
+          <StatCard
+            label="Invoices"
+            value={String(metrics.total_invoices || 0)}
+            sub={`${metrics.overdue_invoices_count || 0} overdue`}
+            accent="bg-amber-400"
+          />
+        </div>
+      ) : (
+        <div className="bg-orange-50 border border-orange-100 rounded-2xl p-6 text-center">
+          <p className="text-orange-600 font-medium">Backend not connected</p>
+          <p className="text-slate-500 text-sm mt-1">Start the FastAPI server at port 8000</p>
         </div>
       )}
     </div>

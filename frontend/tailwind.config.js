@@ -4,6 +4,15 @@ export default {
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
+  safelist: [
+    'bg-orange-50', 'bg-orange-500', 'bg-orange-600',
+    'text-orange-500', 'text-orange-600',
+    'border-orange-200', 'border-orange-500',
+    'from-orange-500', 'to-orange-600',
+    'shadow-orange-200', 'shadow-orange-300',
+    'ring-orange-500',
+    'bg-red-400', 'bg-green-400', 'bg-violet-400', 'bg-blue-400', 'bg-amber-400',
+  ],
   theme: {
     extend: {
       fontFamily: {

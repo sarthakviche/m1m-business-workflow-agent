@@ -1,7 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-
-import Onboard from './pages/Onboard'
-import Login from './pages/Login'
+import { AppProvider } from './context/AppContext'
+import AppShell from './components/AppShell'
 import Dashboard from './pages/Dashboard'
 import Chat from './pages/Chat'
 import Documents from './pages/Documents'
@@ -12,18 +11,21 @@ import Settings from './pages/Settings'
 export default function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/"          element={<Navigate to="/onboard" replace />} />
-        <Route path="/onboard"   element={<Onboard />} />
-        <Route path="/login"     element={<Login />} />
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/chat"      element={<Chat />} />
-        <Route path="/documents" element={<Documents />} />
-        <Route path="/customers" element={<Customers />} />
-        <Route path="/inventory" element={<Inventory />} />
-        <Route path="/settings"  element={<Settings />} />
-        <Route path="*"          element={<Navigate to="/onboard" replace />} />
-      </Routes>
+      <AppProvider>
+        <AppShell>
+          <Routes>
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/onboard" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/chat" element={<Chat />} />
+            <Route path="/documents" element={<Documents />} />
+            <Route path="/customers" element={<Customers />} />
+            <Route path="/inventory" element={<Inventory />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
+        </AppShell>
+      </AppProvider>
     </BrowserRouter>
   )
 }
