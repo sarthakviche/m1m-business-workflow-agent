@@ -55,10 +55,12 @@ async def create_direct_invoice(
     tenant_id: uuid.UUID,
     customer: Customer,
     items_with_qty: List[Tuple[Item, Decimal]],
+    quotation_number: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Create a direct Invoice with lines, apply deterministic GST,
-    decrement stock, and generate PDF.
+    decrement stock, and generate PDF. ``quotation_number`` is printed on the
+    PDF when the invoice is converted from a quotation.
 
     Parameters
     ----------
@@ -185,7 +187,7 @@ async def create_direct_invoice(
         else "Inter-State (IGST)"
     )
     pdf_url = generate_invoice_pdf(
-        tenant, customer, invoice, line_records, tax_type_label=tax_type_label
+        tenant, customer, invoice, line_records, quotation_number=quotation_number
     )
     invoice.pdf_url = pdf_url
 
@@ -302,6 +304,7 @@ async def convert_quotation_to_invoice(
         tenant_id=tenant_id,
         customer=customer,
         items_with_qty=items_with_qty,
+        quotation_number=quotation.quotation_number,
     )
 
     # 5. Link invoice to quotation & mark quotation as converted

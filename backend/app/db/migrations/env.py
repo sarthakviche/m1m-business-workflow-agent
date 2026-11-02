@@ -78,7 +78,12 @@ def run_migrations_offline() -> None:
 
 # ─── Online mode (async) ─────────────────────────────────────────────────────
 def do_run_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
+    # SQLite cannot ALTER constraints in place; batch mode recreates the table.
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        render_as_batch=connection.dialect.name == "sqlite",
+    )
     with context.begin_transaction():
         context.run_migrations()
 

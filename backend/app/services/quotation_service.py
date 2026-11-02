@@ -84,6 +84,7 @@ async def create_quotation(
             "quantity": qty_dec,
             "unit": item.unit,
             "unit_price": price_dec,
+            "gst_rate_percent": item.gst_rate_percent,
             "line_total": line_total,
         })
 

@@ -5,8 +5,11 @@ Sprint 1 stub — minimal app with no routes yet.
 Routes (chat, documents, customers, items, webhooks) will be added in Sprint 1 Steps 2+.
 """
 
-from fastapi import FastAPI
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 # Import all models so that SQLAlchemy registers them with Base.metadata.
 # This is required for Alembic autogenerate to discover all tables.
@@ -14,9 +17,18 @@ import app.models  # noqa: F401
 
 from app.api.v1.router import api_v1_router
 from app.api.v1.documents import router as documents_router
+from app.channels.telegram.router import close_telegram_handler
 from app.config import get_settings
+from app.errors.categories import MunimError
 
 settings = get_settings()
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    yield
+    await close_telegram_handler()
+
 
 app = FastAPI(
     title="M1M — Munim.ai API",
@@ -27,7 +39,18 @@ app = FastAPI(
     version="0.1.0-sprint1",
     docs_url="/docs" if settings.env == "development" else None,
     redoc_url="/redoc" if settings.env == "development" else None,
+    lifespan=lifespan,
 )
+
+
+@app.exception_handler(MunimError)
+async def munim_error_handler(_request: Request, exc: MunimError) -> JSONResponse:
+    # Map domain errors raised outside the orchestrator (e.g. auth dependencies)
+    # to their HTTP status. Only the user-safe message is exposed.
+    return JSONResponse(
+        status_code=exc.http_status,
+        content={"error_code": exc.code, "message": exc.user_message},
+    )
 
 # CORS — allow the Vite dev server and preview server to call the API.
 # Only localhost origins are listed; no wildcard is used.
@@ -38,9 +61,11 @@ app.add_middleware(
         "http://127.0.0.1:5173",
         "http://localhost:4173",   # Vite preview server
         "http://127.0.0.1:4173",
+        "http://localhost:5174",   # WhatsApp demo frontend
+        "http://127.0.0.1:5174",
     ],
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type", "Accept"],
+    allow_headers=["Content-Type", "Accept", "X-API-Key", "X-Conversation-Id", "X-Idempotency-Key"],
 )
 
 # Register API routes

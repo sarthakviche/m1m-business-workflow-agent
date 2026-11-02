@@ -43,6 +43,7 @@ async def generate_quotation_number(
             Quotation.tenant_id == tenant_id,
             Quotation.quotation_number.like(f"{prefix}%"),
         )
+        .with_for_update()
     )
     result = await session.execute(stmt)
     existing_numbers = result.scalars().all()
@@ -79,6 +80,7 @@ async def generate_invoice_number(
             Invoice.tenant_id == tenant_id,
             Invoice.invoice_number.like(f"{prefix}%"),
         )
+        .with_for_update()
     )
     result = await session.execute(stmt)
     existing_numbers = result.scalars().all()

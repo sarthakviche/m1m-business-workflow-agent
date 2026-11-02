@@ -114,7 +114,6 @@ export default function OnboardOverlay({ onComplete }: Props) {
   const [businessName, setBusinessName] = useState('')
   const [businessType, setBusinessType] = useState('')
   const [phone, setPhone] = useState('')
-  const [gstin, setGstin] = useState('')
   const [catalogItem, setCatalogItem] = useState({ name: '', price: '', gst: '18%' })
   const [saving, setSaving] = useState(false)
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
@@ -145,7 +144,7 @@ export default function OnboardOverlay({ onComplete }: Props) {
   const currentLabel = stepLabels[step - 1]
 
   // ── Step content ───────────────────────────────────────────────────────────
-  function StepContent({ large }: { large: boolean }) {
+  function renderStepContent(large: boolean) {
     const inpCls = large ? inputClsLg : inputCls
 
     if (step === 1) {
@@ -289,7 +288,7 @@ export default function OnboardOverlay({ onComplete }: Props) {
 
         {/* Scrollable content */}
         <div className="flex-1 overflow-auto px-5 pt-6 pb-32">
-          <StepContent large={false} />
+          {renderStepContent(false)}
         </div>
 
         {/* Fixed bottom CTA */}
@@ -332,7 +331,7 @@ export default function OnboardOverlay({ onComplete }: Props) {
 
         {/* Form area */}
         <div className="px-8 py-6 space-y-5">
-          <StepContent large={false} />
+          {renderStepContent(false)}
 
           <PrimaryBtn onClick={advance} loading={saving}>
             {step === 3 ? 'Open Munim.ai →' : step === 2 ? 'Save & Continue →' : 'Continue →'}

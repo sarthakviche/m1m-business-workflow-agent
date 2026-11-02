@@ -8,14 +8,17 @@ POST /api/v1/chat
 
 from __future__ import annotations
 
+import uuid
 from typing import Any, Dict, List, Optional, Literal
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agent.graph import agent_graph
-from app.config import get_settings
 from app.db.session import AsyncSessionLocal
+from app.auth.dependencies import get_request_context
+from app.orchestrator.context import RequestContext
+from app.orchestrator.message import NormalizedMessage
+from app.orchestrator.orchestrator import get_orchestrator
 
 router = APIRouter(tags=["chat"])
 
@@ -50,63 +53,43 @@ class ChatResponse(BaseModel):
     document_number: Optional[str] = None
     pdf_url: Optional[str] = None
     data: Optional[Dict[str, Any]] = None
+    run_id: Optional[uuid.UUID] = None
+    success: bool = True
+    error_code: Optional[str] = None
 
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(
     request: ChatRequest,
+    context: RequestContext = Depends(get_request_context),
     session: AsyncSession = Depends(get_db_session),
 ) -> ChatResponse:
     """
     Handle natural language quotation, invoice, and conversion requests
-    via the unified LangGraph agent with conversation history context.
+    via the unified MunimOrchestrator.
     """
-    settings = get_settings()
-    tenant_id = settings.effective_sprint_tenant_id
+    # 1. Normalize the inbound message from the web channel
+    history_dicts = [{"role": m.role, "content": m.content} for m in request.conversation_history]
+    message = NormalizedMessage.from_web(
+        message=request.message,
+        conversation_history=history_dicts,
+        idempotency_key=context.idempotency_key,
+    )
 
-    # Build full conversation text from history + current message
-    conversation_lines = []
-    for msg in request.conversation_history:
-        role = "User" if msg.role == "user" else "Assistant"
-        conversation_lines.append(f"{role}: {msg.content}")
-    conversation_lines.append(f"User: {request.message}")
-    full_conversation_text = "\n".join(conversation_lines)
+    # 2. Process through the central orchestrator
+    orchestrator = get_orchestrator()
+    result = await orchestrator.process(message, context, session)
 
-    # Convert history to state format
-    history_for_state = [
-        {
-            "role": msg.role,
-            "content": msg.content,
-        }
-        for msg in request.conversation_history
-    ]
-
-    initial_state = {
-        "tenant_id": tenant_id,
-        "user_id": None,
-        "channel": "web",
-        "raw_message": request.message,
-        "conversation_history": history_for_state,
-        "full_conversation_text": full_conversation_text,
-    }
-
-    config = {
-        "configurable": {
-            "session": session,
-        }
-    }
-
-    final_state = await agent_graph.ainvoke(initial_state, config=config)
-
-    attachments = final_state.get("response_attachments") or []
-    pdf_url = attachments[0].get("url") if attachments else None
-
+    # 3. Return the standard response
     return ChatResponse(
-        response_text=final_state.get("response_text", ""),
-        intent=final_state.get("detected_intent"),
-        document_type=final_state.get("document_type"),
-        document_id=final_state.get("document_id"),
-        document_number=final_state.get("document_number"),
-        pdf_url=pdf_url,
-        data=final_state.get("data"),
+        response_text=result.response_text,
+        intent=result.intent,
+        document_type=result.document_type,
+        document_id=result.document_id,
+        document_number=result.document_number,
+        pdf_url=result.pdf_url,
+        data=result.data,
+        run_id=result.run_id,
+        success=result.success,
+        error_code=result.error_code,
     )

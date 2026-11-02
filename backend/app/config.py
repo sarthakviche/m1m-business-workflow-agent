@@ -123,6 +123,20 @@ class Settings(BaseSettings):
     # Set GEMINI_API_KEY in your .env file.  Never hardcode or log this value.
     gemini_api_key: Optional[str] = None
 
+    # ── API key auth ──────────────────────────────────────────────────────────
+    # JSON map of API key → tenant UUID, e.g. {"key-abc": "a0eebc99-..."}.
+    # Read by app.auth.tenant_resolver. Never log this value.
+    munim_api_keys: Optional[str] = None
+
+    # ── Telegram channel ──────────────────────────────────────────────────────
+    # TELEGRAM_BOT_TOKEN comes from @BotFather. Never hardcode or log it.
+    telegram_bot_token: Optional[str] = None
+    # Shared secret Telegram echoes in X-Telegram-Bot-Api-Secret-Token on every
+    # webhook call. The webhook endpoint is disabled until this is set.
+    telegram_webhook_secret: Optional[str] = None
+    telegram_api_base_url: str = "https://api.telegram.org"
+    telegram_link_code_ttl_minutes: int = 15
+
     model_config = SettingsConfigDict(
         env_file=_find_env_file(),
         env_file_encoding="utf-8",

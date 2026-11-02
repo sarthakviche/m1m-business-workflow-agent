@@ -1,89 +1,97 @@
-import { useEffect, useState } from 'react'
-import { API_BASE, TEST_PHONE } from '../api/config';
+import { useMemo, useState } from 'react'
+import { api } from '../api/client'
+import { IconBox } from '../components/icons'
+import { Badge, Card, EmptyState, ErrorState, Page, PageHeader, SearchInput, SkeletonRows, Tabs } from '../components/ui'
+import { useAsync } from '../hooks/useAsync'
+import { formatINR, formatQty } from '../lib/format'
 
-interface Item {
-  id: string
-  name: string
-  hsn_code: string | null
-  gst_rate_percent: number
-  unit_price: number
-  unit: string
-}
-
-
+type Filter = 'all' | 'low'
 
 export default function Inventory() {
-  const [items, setItems] = useState<Item[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const { data, error, loading, reload } = useAsync(api.items)
+  const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState<Filter>('all')
 
-  useEffect(() => {
-    fetch(`${API_BASE}/items/?phone=`)
-      .then(res => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        return res.json()
-      })
-      .then(data => {
-        setItems(data)
-        setLoading(false)
-      })
-      .catch(() => {
-        fetch('/items/?phone=')
-          .then(res => res.json())
-          .then(data => {
-            setItems(data)
-            setLoading(false)
-          })
-          .catch(() => {
-            setError('Failed to fetch inventory catalog.')
-            setLoading(false)
-          })
-      })
-  }, [])
+  const items = useMemo(() => data ?? [], [data])
+  const lowCount = items.filter((i) => i.low_stock).length
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return items.filter((i) =>
+      (filter === 'all' || i.low_stock) &&
+      (!q || i.name.toLowerCase().includes(q) || i.hsn_code?.toLowerCase().includes(q)))
+  }, [items, query, filter])
 
   return (
-    <div style={{ padding: '24px', fontFamily: 'Inter, system-ui, sans-serif', backgroundColor: '#0f172a', color: '#f8fafc', minHeight: '100vh' }}>
-      <header style={{ marginBottom: '24px' }}>
-        <h1 style={{ margin: 0, fontSize: '28px', color: '#38bdf8' }}>Product & Inventory Catalog</h1>
-        <p style={{ margin: '4px 0 0', color: '#94a3b8' }}>Real database item pricing & GST rates</p>
-      </header>
+    <Page>
+      <PageHeader title="Stock" description="Your catalog with selling price, GST rate and units in stock. Invoices reduce stock automatically." />
 
-      <nav style={{ display: 'flex', gap: '12px', marginBottom: '24px', flexWrap: 'wrap' }}>
-        <a href="/chat" style={{ color: '#fff', padding: '8px 16px', borderRadius: '6px', background: '#00a884', textDecoration: 'none', fontWeight: 600 }}>← M1M Chat</a>
-        <a href="/dashboard" style={{ color: '#94a3b8', padding: '8px 16px', borderRadius: '6px', textDecoration: 'none' }}>Dashboard</a>
-        <a href="/customers" style={{ color: '#94a3b8', padding: '8px 16px', borderRadius: '6px', textDecoration: 'none' }}>Customers</a>
-        <a href="/inventory" style={{ color: '#38bdf8', padding: '8px 16px', borderRadius: '6px', background: '#1e293b', textDecoration: 'none', fontWeight: 600 }}>Inventory</a>
-        <a href="/documents" style={{ color: '#94a3b8', padding: '8px 16px', borderRadius: '6px', textDecoration: 'none' }}>Invoices & Quotations</a>
-        <a href="/chat" style={{ color: '#94a3b8', padding: '8px 16px', borderRadius: '6px', textDecoration: 'none' }}>Copilot Chat</a>
-      </nav>
+      <Card>
+        <div className="flex flex-col gap-3 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <Tabs value={filter} onChange={setFilter} options={[
+            { value: 'all', label: 'All items', count: items.length },
+            { value: 'low', label: 'Low stock', count: lowCount },
+          ]} />
+          <SearchInput value={query} onChange={setQuery} placeholder="Search item or HSN" />
+        </div>
 
-      {loading && <div style={{ color: '#94a3b8' }}>Loading catalog items...</div>}
-      {error && <div style={{ color: '#f87171', padding: '12px', background: '#450a0a', borderRadius: '6px' }}>{error}</div>}
+        {error ? <ErrorState message={error} onRetry={reload} />
+          : loading ? <SkeletonRows />
+          : items.length === 0 ? (
+            <EmptyState icon={<IconBox />} title="Your catalog is empty" description="Add items to your catalog to start quoting and billing." />
+          ) : visible.length === 0 ? (
+            <EmptyState icon={<IconBox />} title={filter === 'low' ? 'Nothing is running low' : 'No matches'}
+              description={filter === 'low' ? 'Every item has more than 10 units in stock.' : 'No item matches that search.'} />
+          ) : (
+            <>
+              {/* Table on wider screens */}
+              <div className="hidden overflow-x-auto md:block">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-100 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      <th scope="col" className="px-5 py-3">Item</th>
+                      <th scope="col" className="px-5 py-3">HSN</th>
+                      <th scope="col" className="px-5 py-3 text-right">Price</th>
+                      <th scope="col" className="px-5 py-3 text-right">GST</th>
+                      <th scope="col" className="px-5 py-3 text-right">In stock</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {visible.map((i) => (
+                      <tr key={i.id} className="hover:bg-slate-50/60">
+                        <td className="px-5 py-3.5 font-medium text-slate-900">{i.name}</td>
+                        <td className="px-5 py-3.5 tabular-nums text-slate-500">{i.hsn_code ?? '—'}</td>
+                        <td className="px-5 py-3.5 text-right tabular-nums text-slate-900">
+                          {formatINR(i.unit_price)}<span className="text-slate-400"> / {i.unit}</span>
+                        </td>
+                        <td className="px-5 py-3.5 text-right tabular-nums text-slate-600">{formatQty(i.gst_rate_percent)}%</td>
+                        <td className="px-5 py-3.5 text-right">
+                          {i.low_stock
+                            ? <Badge tone="red">{formatQty(i.quantity_available)} {i.unit}</Badge>
+                            : <span className="tabular-nums text-slate-900">{formatQty(i.quantity_available)} {i.unit}</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
 
-      {!loading && !error && (
-        <table style={{ width: '100%', borderCollapse: 'collapse', background: '#1e293b', borderRadius: '8px', overflow: 'hidden' }}>
-          <thead>
-            <tr style={{ background: '#334155', color: '#38bdf8', textAlign: 'left' }}>
-              <th style={{ padding: '12px' }}>Item Name</th>
-              <th style={{ padding: '12px' }}>HSN Code</th>
-              <th style={{ padding: '12px' }}>Unit Price</th>
-              <th style={{ padding: '12px' }}>GST Rate</th>
-              <th style={{ padding: '12px' }}>Unit</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((it, idx) => (
-              <tr key={it.id} style={{ borderBottom: '1px solid #334155', background: idx % 2 === 0 ? '#1e293b' : '#0f172a' }}>
-                <td style={{ padding: '12px', fontWeight: 600 }}>{it.name}</td>
-                <td style={{ padding: '12px' }}>{it.hsn_code || 'N/A'}</td>
-                <td style={{ padding: '12px', color: '#4ade80' }}>₹{it.unit_price.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                <td style={{ padding: '12px' }}>{it.gst_rate_percent}%</td>
-                <td style={{ padding: '12px' }}>{it.unit}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </div>
+              {/* Cards on phones */}
+              <ul className="divide-y divide-slate-100 md:hidden">
+                {visible.map((i) => (
+                  <li key={i.id} className="flex items-center justify-between gap-3 px-4 py-3.5">
+                    <div className="min-w-0">
+                      <p className="font-medium text-slate-900">{i.name}</p>
+                      <p className="mt-0.5 text-xs text-slate-500">
+                        {formatINR(i.unit_price)} / {i.unit} · GST {formatQty(i.gst_rate_percent)}%{i.hsn_code ? ` · HSN ${i.hsn_code}` : ''}
+                      </p>
+                    </div>
+                    <Badge tone={i.low_stock ? 'red' : 'neutral'}>{formatQty(i.quantity_available)} {i.unit}</Badge>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+      </Card>
+    </Page>
   )
 }

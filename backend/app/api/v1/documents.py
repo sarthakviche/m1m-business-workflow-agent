@@ -22,28 +22,18 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import get_settings
-from app.db.session import AsyncSessionLocal
+from app.auth.dependencies import get_request_context
+from app.api.v1.chat import get_db_session
 from app.models.customer import Customer
 from app.models.invoice import Invoice
 from app.models.quotation import Quotation
+from app.orchestrator.context import RequestContext
 
 router = APIRouter(tags=["documents"])
 
 # Root of all generated documents (matches pdf_service.py _DOCS_DIR)
 # Resolves to: <repo>/backend/generated_docs/
 _DOCS_ROOT = Path(__file__).resolve().parents[3] / "generated_docs"
-
-
-async def get_db_session():
-    """FastAPI dependency yielding an async database session with auto-commit."""
-    async with AsyncSessionLocal() as session:
-        try:
-            yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
 
 
 # ─── Pydantic Models for Document History ─────────────────────────────────────
@@ -72,11 +62,11 @@ class DocumentListResponse(BaseModel):
     description="Returns all quotations and invoices for the active tenant, ordered by creation date descending.",
 )
 async def list_documents(
+    context: RequestContext = Depends(get_request_context),
     session: AsyncSession = Depends(get_db_session),
 ) -> DocumentListResponse:
-    """Retrieve document history (quotations and invoices) for the active tenant."""
-    settings = get_settings()
-    tenant_id = uuid.UUID(settings.effective_sprint_tenant_id)
+    """Retrieve document history (quotations and invoices) for the authenticated tenant."""
+    tenant_id = context.business_id
 
     # 1. Fetch quotations with customer names
     q_stmt = (

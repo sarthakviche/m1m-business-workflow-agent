@@ -30,7 +30,9 @@ from app.services.gemini import DEFAULT_MODEL, get_gemini_client
 
 class ExtractedLineItem(BaseModel):
     item_name: str = Field(description="Name or description of the product/item")
-    quantity: float = Field(default=1.0, description="Quantity requested")
+    # None means the user did not state a quantity. It is never guessed: the
+    # agent asks for it instead (see app.agent.graph).
+    quantity: Optional[float] = Field(default=None, description="Quantity requested; null if not stated")
 
 
 class IntentClassificationResult(BaseModel):
@@ -64,49 +66,87 @@ class IntentClassificationResult(BaseModel):
     )
 
 
-CLASSIFICATION_PROMPT = """You are the intent classification and entity extraction engine for M1M (Munim.ai), an AI business workflow agent for Indian SMEs.
+CLASSIFICATION_PROMPT = """You are the intent classification and entity extraction engine for Munim (M1M), a business workflow AI for Indian SMEs.
 
-Analyze the user's input message and conversation history, then return a JSON object strictly matching this JSON schema:
+The business is an industrial supplier. Its catalog contains items like steel rods, steel plates, bolts, nuts, washers, and other industrial hardware.
+
+Analyze the CURRENT user message together with the conversation history, then return ONLY a valid JSON object matching this schema — no markdown, no explanation:
 {
   "intent": "quotation" | "invoice" | "catalog_query" | "future_feature" | "off_topic" | "clarify" | "out_of_scope",
   "confidence": float (0.0 to 1.0),
   "customer_name": string | null,
-  "line_items": [
-    {"item_name": string, "quantity": float}
-  ],
+  "line_items": [{"item_name": string, "quantity": float}],
   "quotation_number": string | null,
   "is_quotation_conversion": boolean,
   "catalog_item_name": string | null,
   "clarification_question": string | null
 }
 
-CRITICAL CONTEXT & TYPO RULES:
-- Correct common typos in user input (e.g., "craete" -> "create", "Steet" -> "Steel").
-- If the user provides customer and items in a single message like "create a quotation for ramesh traders for TMT Steet rod 12mm 2 kg":
-  - Extract customer_name: "ramesh traders"
-  - Extract line_items: [{"item_name": "TMT Steel rod 12mm", "quantity": 2.0}]
-- Quantities may appear before or after the item name (e.g., "2 kg TMT Steel rod" or "TMT Steel rod 12mm 2 kg").
-- MULTI-TURN CONTEXT: If the assistant previously asked "Which items and quantities should be included for [Customer]?", and the user replies with item names (e.g., "TMT Steel rods"), retain intent="quotation" (or "invoice"), retain customer_name="[Customer]", and extract the line_items from the user's message.
-- If the assistant previously asked "Which customer should this document be prepared for?", and the user replies with a name (e.g. "Ramesh Traders"), inherit the prior document intent and extract the customer_name.
+=== INTENT RULES ===
 
-RULES:
-1. "quotation": User wants to prepare/create/send a quotation, estimate, or price quote for a customer.
-   Example: "Create a quotation for Ramesh Traders for 5 TMT steel rods and 10 bolts"
-2. "invoice": User wants to create/generate an invoice or convert a quotation into an invoice.
-   Example: "Create an invoice for Ramesh Traders for 2 TMT steel rods"
-   Example: "Convert quotation Q-202608-001 into an invoice"
-3. "catalog_query": User asks about price, rate, stock level, or listing catalog items.
-   Example: "What's the price of Steel Rod 12mm?"
-   Example: "Do we have PVC pipe in stock?"
-   Example: "Show me all items" / "list our catalog"
-   Extract specific product name into catalog_item_name.
-4. "future_feature": Request is a legitimate SME business feature not built yet in this sprint (e.g., payment/dues reminders, WhatsApp settings, accounting sync, dues follow-ups, salary slips).
-   Example: "Remind my customers about dues"
-5. "off_topic": Request is completely unrelated to business operations (e.g., writing python scripts/code, jokes, weather, general trivia, personal chat, recipes).
-   Example: "Write me a python script to sort a list"
-6. "clarify": The request is ambiguous, lacks critical information, or confidence is low (< 0.6).
-7. Extract multiple line items if specified. If quantity is omitted, assume 1.0.
-8. Return ONLY valid JSON. No surrounding markdown backticks or commentary.
+1. "quotation": User wants to create a quotation/estimate/price quote for a customer.
+2. "invoice": User wants to create a GST invoice, OR convert a quotation to an invoice.
+3. "catalog_query": User asks about item prices, rates, stock levels, or wants to see the catalog.
+4. "future_feature": Legitimate SME feature not yet built (dues reminders, accounting sync, salary slips, reports).
+5. "off_topic": Completely unrelated to business (jokes, code, weather, recipes, general chat).
+6. "clarify": Ambiguous request, or missing BOTH customer AND items with no prior context to resolve them.
+
+=== ENTITY EXTRACTION RULES ===
+
+CUSTOMER NAME:
+- Extract business/person name from phrases like "for X", "to X", "of X".
+- Do NOT confuse a quantity or number as a customer name.
+- If customer name starts with a digit, set customer_name = null.
+
+LINE ITEMS:
+- Extract ALL items and quantities mentioned in the message.
+- Quantities may appear before or after the item name: "10 kg TMT Steel Rod" or "TMT Steel Rod 10 kg".
+- Multiple items separated by "and", commas, or newlines should ALL be extracted.
+- IMPORTANT: Extract item names exactly as mentioned — do NOT check if they exist in the catalog here.
+- If no quantity is mentioned for an item, set quantity to null. NEVER assume 1 or any other number.
+- Numbers that are part of an item's specification (12mm, M12, 6205, 2.5sqmm, 1 Ton, 5kg Box) are NOT quantities.
+- If the user mentions items without specifying a document type (quotation/invoice), still extract them.
+
+MULTI-TURN CONTEXT — CRITICAL RULES:
+- If conversation history shows the assistant asked "Which items and quantities should be included for **X**?" — and the current message contains item names/quantities — set intent = (same as prior turn: quotation or invoice), customer_name = X, and extract line_items from the current message.
+- If conversation history shows the assistant asked "Which customer should this document be prepared for?" — and the current message is a customer name — set intent = (prior intent), customer_name = current message.
+- If conversation history shows a quotation or invoice was being created for customer X with items Y — and the user says "actually make it an invoice" or "change to quotation" — set intent accordingly, re-use customer_name = X and line_items = Y from history.
+- NEVER lose context from prior turns when the user is answering a clarification question.
+
+QUOTATION CONVERSION:
+- Set is_quotation_conversion = true and extract quotation_number when user says "convert Q-XXXXXX-XXX to invoice" or "make Q-XXXXXX-XXX an invoice".
+
+=== CONFIDENCE ===
+- Set confidence >= 0.85 when intent is clear and at least customer_name OR line_items are present.
+- Set confidence = 0.5 and intent = "clarify" ONLY when the message is truly ambiguous with no context.
+
+=== EXAMPLES ===
+
+User: "Create a quotation for Ramesh Traders, 10 kg TMT Steel Rod 12mm and 50 pcs MS Hex Bolt"
+-> intent=quotation, customer_name="Ramesh Traders", line_items=[{item_name:"TMT Steel Rod 12mm", quantity:10}, {item_name:"MS Hex Bolt", quantity:50}]
+
+User: "Make an invoice for Patel Constructions for 5 kg steel plate and 20 bolts"
+-> intent=invoice, customer_name="Patel Constructions", line_items=[{item_name:"steel plate", quantity:5}, {item_name:"bolts", quantity:20}]
+
+History: assistant said "Which items and quantities for **Ganesh Engineering Works**?"
+User: "20 kg TMT Steel Rod 12mm"
+-> intent=quotation, customer_name="Ganesh Engineering Works", line_items=[{item_name:"TMT Steel Rod 12mm", quantity:20}]
+
+History: user was creating a quotation for Ramesh Traders with TMT Steel Rod 10 kg
+User: "Actually make it an invoice"
+-> intent=invoice, customer_name="Ramesh Traders", line_items=[{item_name:"TMT Steel Rod 12mm", quantity:10}]
+
+User: "What is the price of TMT Steel Rod?"
+-> intent=catalog_query, catalog_item_name="TMT Steel Rod"
+
+User: "Show all items" / "What do we have in stock?"
+-> intent=catalog_query, catalog_item_name=null
+
+User: "Tell me a joke"
+-> intent=off_topic
+
+User: "Remind my customer about dues"
+-> intent=future_feature
 """
 
 
@@ -157,14 +197,15 @@ def _extract_via_regex(msg: str, conversation_context: str = "") -> IntentClassi
         item_ask_match = re.search(r"items and quantities should be included for \*\*([^*]+)\*\*", conversation_context, re.IGNORECASE)
         if item_ask_match:
             cust_name = item_ask_match.group(1).strip()
-            # Treat raw message as line item
-            qty_m = re.search(r"(\d+(?:\.\d+)?)\s*(?:kg|pcs|mtr|box|l|ton|mm)?", msg, re.IGNORECASE)
-            qty = float(qty_m.group(1)) if qty_m else 1.0
+            # Treat the message as the item list. A bare item name keeps
+            # quantity=None so the agent asks for it; numbers inside a spec
+            # ("12mm") are not read as quantities.
+            items = _rescue_line_items(msg) or [ExtractedLineItem(item_name=msg.strip(), quantity=None)]
             return IntentClassificationResult(
                 intent="quotation",
                 confidence=0.8,
                 customer_name=cust_name,
-                line_items=[ExtractedLineItem(item_name=msg.strip(), quantity=qty)],
+                line_items=items,
             )
 
     if not is_quote and not is_inv:
@@ -187,7 +228,7 @@ def _extract_via_regex(msg: str, conversation_context: str = "") -> IntentClassi
         if not qty_match:
             qty_match = re.search(r"^\s*(\d+(?:\.\d+)?)\b|\b(\d+(?:\.\d+)?)\s*$", item_raw, re.IGNORECASE)
 
-        qty = 1.0
+        qty = None
         i_name = item_raw
         if qty_match:
             qty_str = qty_match.group(1) or (qty_match.group(2) if len(qty_match.groups()) > 1 else None)
@@ -231,10 +272,41 @@ def _extract_via_regex(msg: str, conversation_context: str = "") -> IntentClassi
     )
 
 
+def _rescue_line_items(msg: str) -> List[ExtractedLineItem]:
+    """
+    Best-effort regex extraction of item lines from a message.
+    Handles patterns like:
+      - "10 kg TMT Steel Rod 12mm and 50 pcs MS Hex Bolt"
+      - "TMT Steel Rod 12mm 10 kg, MS Nut 50 pcs"
+    """
+    # Split on " and ", commas between items
+    candidates = re.split(r'\s+and\s+|,\s*(?=\d|\w)', msg, flags=re.IGNORECASE)
+    items = []
+    for seg in candidates:
+        seg = seg.strip()
+        if not seg:
+            continue
+        # Pattern: qty [unit] item_name OR item_name qty [unit]
+        m = re.match(r'^(\d+(?:\.\d+)?)\s*(?:kg|pcs|mtr|box|ltr|ton|bags|pieces|units|nos)?\s+(.+)$', seg, re.IGNORECASE)
+        if m:
+            qty = float(m.group(1))
+            name = m.group(2).strip()
+            items.append(ExtractedLineItem(item_name=name, quantity=qty))
+            continue
+        m2 = re.match(r'^(.+?)\s+(\d+(?:\.\d+)?)\s*(?:kg|pcs|mtr|box|ltr|ton|bags|pieces|units|nos)?$', seg, re.IGNORECASE)
+        if m2:
+            name = m2.group(1).strip()
+            qty = float(m2.group(2))
+            # Only use if name looks like an item (not a pure number or customer word)
+            if not re.match(r'^\d', name) and len(name) > 3:
+                items.append(ExtractedLineItem(item_name=name, quantity=qty))
+    return items
+
+
 def classify_intent_sync(raw_message: str, conversation_context: str = "") -> IntentClassificationResult:
     """
     Synchronously classify raw user message using Gemini with regex fallback.
-    
+
     Parameters
     ----------
     raw_message : str
@@ -252,31 +324,65 @@ def classify_intent_sync(raw_message: str, conversation_context: str = "") -> In
 
     try:
         client = get_gemini_client()
-        
+
         # Build prompt with conversation context
         context_section = ""
         if conversation_context.strip():
             context_section = f"\n\nConversation history:\n{conversation_context}\n"
-        
+
         prompt = f"{CLASSIFICATION_PROMPT}{context_section}\n\nUser message: \"{msg}\""
 
+        from google import genai
         response = client.models.generate_content(
             model=DEFAULT_MODEL,
             contents=prompt,
+            config=genai.types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=IntentClassificationResult,
+                temperature=0.1
+            ),
         )
         resp_text = (response.text or "").strip()
 
-        # Extract JSON object from response
-        json_match = re.search(r"\{.*\}", resp_text, re.DOTALL)
-        if not json_match:
-            return _extract_via_regex(msg, conversation_context)
-
-        data = json.loads(json_match.group(0))
+        data = json.loads(resp_text)
         result = IntentClassificationResult(**data)
 
         # Sanitize customer_name: if it starts with digits, it's item quantity not a customer name
         if result.customer_name and re.match(r"^\d", result.customer_name.strip()):
             result.customer_name = None
+
+        # ── Post-LLM rescue: if LLM returned no line_items but msg has quantities, extract them ──
+        if not result.line_items and result.intent in ("quotation", "invoice", "clarify"):
+            rescued = _rescue_line_items(msg)
+            if rescued:
+                result.line_items = rescued
+                # If we now have both customer + items and were clarify, promote intent
+                if result.intent == "clarify" and result.customer_name and result.line_items:
+                    # Check if message had quotation/invoice keywords
+                    lowered = msg.lower()
+                    if any(w in lowered for w in ("quote", "quotation", "estimate")):
+                        result.intent = "quotation"
+                        result.confidence = 0.85
+                    elif any(w in lowered for w in ("invoice", "bill", "tax")):
+                        result.intent = "invoice"
+                        result.confidence = 0.85
+
+        # ── Promote clarify→quotation/invoice when context has prior intent established ──
+        if result.intent == "clarify" and conversation_context:
+            # Check if assistant previously asked for items for a known customer
+            m = re.search(
+                r"items and quantities.*?for \*\*([^*]+)\*\*",
+                conversation_context, re.IGNORECASE
+            )
+            if m and result.line_items:
+                # Prior intent detection from context
+                ctx_lower = conversation_context.lower()
+                prior_intent = "quotation"
+                if "invoice" in ctx_lower and "quotation" not in ctx_lower[:ctx_lower.find("invoice")]:
+                    prior_intent = "invoice"
+                result.intent = prior_intent
+                result.customer_name = result.customer_name or m.group(1).strip()
+                result.confidence = 0.88
 
         # Apply confidence and missing field routing rules
         if result.confidence < 0.6:

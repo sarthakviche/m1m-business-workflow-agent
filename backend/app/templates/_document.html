@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+{#
+  Shared layout for customer-facing documents (quotation.html, invoice.html).
+
+  Rendered by WeasyPrint (production) and headless Chromium (fallback): layout
+  uses tables and plain block flow so both engines agree, and long documents
+  break across pages with the item header repeated.
+
+  Context: tenant, customer, lines, tax (pdf_service.tax_breakdown or None),
+  amount_words, doc_number, date_str. Child templates fill the blocks below.
+#}
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>{% block title %}{% endblock %} · {{ tenant.business_name }}</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 14mm 14mm 16mm;
+      @bottom-right {
+        content: "Page " counter(page) " of " counter(pages);
+        font: 8px "Inter", "Segoe UI", Arial, sans-serif;
+        color: #9ca3af;
+      }
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body { margin: 0; padding: 0; }
+
+    body {
+      font-family: "Inter", "Segoe UI", "Helvetica Neue", Arial, "Noto Sans", "DejaVu Sans", sans-serif;
+      font-size: 10px;
+      line-height: 1.5;
+      color: #1f2937;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    table { border-collapse: collapse; width: 100%; }
+    td, th { vertical-align: top; padding: 0; }
+    .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .muted { color: #6b7280; }
+    .label {
+      font-size: 7.5px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #9ca3af;
+    }
+
+    /* ── Header ─────────────────────────────────────────────────────── */
+    .accent { height: 4px; background: #ea580c; border-radius: 2px; margin-bottom: 18px; }
+
+    .seller td.logo-cell { width: 46px; }
+    .monogram {
+      width: 38px; height: 38px; border-radius: 9px;
+      background: #ea580c; color: #fff;
+      font-size: 15px; font-weight: 800; line-height: 38px; text-align: center;
+    }
+    .seller-name { font-size: 17px; font-weight: 800; color: #111827; letter-spacing: -0.01em; line-height: 1.2; }
+    .seller-meta { margin-top: 3px; color: #4b5563; max-width: 92mm; }
+    .seller-meta strong { color: #111827; font-weight: 600; }
+
+    .doc-title { text-align: right; }
+    .doc-kind { font-size: 9px; font-weight: 800; letter-spacing: 0.22em; color: #ea580c; }
+    .doc-copy { font-size: 7.5px; font-weight: 600; letter-spacing: 0.08em; color: #9ca3af; text-transform: uppercase; }
+    .doc-number { font-size: 18px; font-weight: 800; color: #111827; margin-top: 2px; letter-spacing: -0.01em; }
+    .doc-meta { margin-top: 8px; margin-left: auto; width: auto; }
+    .doc-meta td { padding: 1px 0 1px 14px; text-align: right; }
+    .doc-meta td.k { color: #6b7280; }
+    .doc-meta td.v { font-weight: 600; color: #111827; }
+
+    /* ── Parties ────────────────────────────────────────────────────── */
+    .parties { margin-top: 20px; }
+    .parties > tbody > tr > td { width: 50%; }
+    .parties > tbody > tr > td.first { padding-right: 6px; }
+    .parties > tbody > tr > td.second { padding-left: 6px; }
+    .party { border: 1px solid #e5e7eb; border-radius: 8px; padding: 11px 13px; }
+    .party-name { font-size: 12px; font-weight: 700; color: #111827; margin-top: 4px; }
+    .party-line { color: #4b5563; margin-top: 1px; }
+    .party-line strong { color: #111827; font-weight: 600; }
+    .supply { background: #fff7ed; border-color: #fed7aa; }
+    .supply .row { margin-top: 4px; }
+
+    /* ── Items ──────────────────────────────────────────────────────── */
+    .items { margin-top: 18px; }
+    .items thead { display: table-header-group; }
+    .items th {
+      background: #f9fafb;
+      border-top: 1px solid #e5e7eb;
+      border-bottom: 1px solid #e5e7eb;
+      padding: 7px 8px;
+      font-size: 7.5px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+      color: #6b7280; text-align: left;
+    }
+    .items th.num { text-align: right; }
+    .items td { padding: 7px 8px; border-bottom: 1px solid #f0f1f3; }
+    .items tbody tr:nth-child(even) td { background: #fcfcfd; }
+    .items tr { page-break-inside: avoid; break-inside: avoid; }
+    .items .idx { width: 22px; color: #9ca3af; }
+    .item-name { font-weight: 600; color: #111827; }
+    .items .amount { font-weight: 700; color: #111827; }
+
+    /* ── Summary ────────────────────────────────────────────────────── */
+    .summary { margin-top: 14px; page-break-inside: avoid; break-inside: avoid; }
+    .summary td.left { width: 54%; padding-right: 18px; }
+    .words {
+      border-left: 3px solid #ea580c; background: #fff7ed;
+      padding: 8px 11px; border-radius: 0 6px 6px 0;
+    }
+    .words .text { font-weight: 600; color: #111827; margin-top: 2px; }
+    .terms { margin-top: 12px; }
+    .terms ol { margin: 4px 0 0; padding-left: 14px; color: #4b5563; }
+    .terms li { margin: 1px 0; }
+
+    .totals td { padding: 3px 0; }
+    .totals td.k { color: #4b5563; }
+    .totals td.k .sub { color: #9ca3af; font-size: 8.5px; }
+    .totals tr.subtotal td { padding-top: 0; font-weight: 600; color: #111827; }
+    .totals tr.rule td { border-top: 1px solid #e5e7eb; padding: 0; height: 6px; }
+    .grand { margin-top: 8px; background: #ea580c; color: #fff; border-radius: 8px; }
+    .grand td { padding: 9px 12px; vertical-align: middle; }
+    .grand .k { font-size: 9px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+    .grand .v { font-size: 15px; font-weight: 800; }
+    .tax-note { margin-top: 5px; font-size: 8.5px; color: #9ca3af; text-align: right; }
+
+    /* ── Sign-off ───────────────────────────────────────────────────── */
+    .signoff { margin-top: 28px; page-break-inside: avoid; break-inside: avoid; }
+    .signoff td.thanks { vertical-align: bottom; color: #4b5563; }
+    .signoff td.thanks strong { color: #111827; }
+    .sign { width: 62mm; text-align: center; }
+    .sign .for { font-weight: 600; color: #111827; }
+    .sign .line { border-top: 1px solid #9ca3af; margin-top: 34px; padding-top: 4px; color: #6b7280; font-size: 8.5px; }
+
+    .footer { margin-top: 22px; padding-top: 8px; border-top: 1px solid #f0f1f3; font-size: 8px; color: #9ca3af; }
+    .footer td.brand { text-align: right; }
+    .footer .dot { color: #ea580c; font-weight: 800; }
+  </style>
+</head>
+<body>
+
+  <div class="accent"></div>
+
+  <!-- Header: the seller's identity leads; document identity on the right -->
+  <table>
+    <tr>
+      <td>
+        <table class="seller">
+          <tr>
+            <td class="logo-cell">
+              <div class="monogram">{{ (tenant.business_name or '?')[:1] | upper }}</div>
+            </td>
+            <td>
+              <div class="seller-name">{{ tenant.business_name }}</div>
+              <div class="seller-meta">
+                {% if tenant.address %}{{ tenant.address }}<br>{% endif %}
+                {% if tenant.gstin %}<strong>GSTIN</strong> {{ tenant.gstin }} &nbsp;·&nbsp; {% endif %}{{ tenant.state }}
+              </div>
+            </td>
+          </tr>
+        </table>
+      </td>
+      <td class="doc-title">
+        <div class="doc-kind">{% block kind %}{% endblock %}</div>
+        {% block copy_note %}{% endblock %}
+        <div class="doc-number">{{ doc_number }}</div>
+        <table class="doc-meta">
+          <tr><td class="k">Date</td><td class="v">{{ date_str }}</td></tr>
+          {% block meta_rows %}{% endblock %}
+        </table>
+      </td>
+    </tr>
+  </table>
+
+  <!-- Parties -->
+  <table class="parties">
+    <tr>
+      <td class="first">
+        <div class="party">
+          <div class="label">{% block party_label %}{% endblock %}</div>
+          <div class="party-name">{{ customer.name }}</div>
+          {% if customer.address %}<div class="party-line">{{ customer.address }}</div>{% endif %}
+          {% if customer.gstin %}<div class="party-line"><strong>GSTIN</strong> {{ customer.gstin }}</div>{% endif %}
+          {% if customer.phone %}<div class="party-line"><strong>Phone</strong> {{ customer.phone }}</div>{% endif %}
+        </div>
+      </td>
+      <td class="second">
+        <div class="party supply">
+          <div class="label">Supply details</div>
+          {% if tax %}
+            <div class="row party-line"><strong>Place of supply</strong> {{ tax.place_of_supply }}{% if tax.state_assumed %} <span class="muted">(assumed)</span>{% endif %}</div>
+            <div class="row party-line"><strong>Tax type</strong> {% if tax.inter_state %}Inter-state · IGST{% else %}Intra-state · CGST + SGST{% endif %}</div>
+          {% else %}
+            <div class="row party-line"><strong>Place of supply</strong> {{ customer.state or tenant.state }}</div>
+          {% endif %}
+          {% block supply_rows %}{% endblock %}
+        </div>
+      </td>
+    </tr>
+  </table>
+
+  <!-- Line items -->
+  <table class="items">
+    <thead>
+      <tr>
+        <th class="idx">#</th>
+        <th>Item</th>
+        <th>HSN</th>
+        <th class="num">Qty</th>
+        <th class="num">Rate (₹)</th>
+        <th class="num">GST</th>
+        <th class="num">{% block amount_header %}Amount (₹){% endblock %}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for line in lines %}
+      <tr>
+        <td class="idx">{{ loop.index }}</td>
+        <td><div class="item-name">{{ line.item_name }}</div></td>
+        <td class="muted">{{ line.hsn_code or '—' }}</td>
+        <td class="num">{{ line.quantity | qty }} {{ line.unit or '' }}</td>
+        <td class="num">{{ line.unit_price | inr }}</td>
+        <td class="num muted">{% if line.gst_rate_percent is not none %}{{ line.gst_rate_percent | qty }}%{% else %}—{% endif %}</td>
+        <td class="num amount">{{ line.line_total | inr }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <!-- Words + terms | totals -->
+  <table class="summary">
+    <tr>
+      <td class="left">
+        <div class="words">
+          <div class="label">{% block words_label %}Amount in words{% endblock %}</div>
+          <div class="text">{{ amount_words }}</div>
+        </div>
+        <div class="terms">
+          <div class="label">Terms &amp; conditions</div>
+          <ol>{% block terms %}{% endblock %}</ol>
+        </div>
+      </td>
+      <td>
+        <table class="totals">
+          <tr class="subtotal">
+            <td class="k">Taxable value</td>
+            <td class="num">₹ {{ taxable_total | inr }}</td>
+          </tr>
+          {% if tax %}
+            {% for g in tax.groups %}
+              {% if tax.inter_state %}
+                <tr><td class="k">IGST @ {{ g.rate | qty }}% <span class="sub">on ₹ {{ g.taxable | inr }}</span></td><td class="num">₹ {{ g.igst | inr }}</td></tr>
+              {% else %}
+                <tr><td class="k">CGST @ {{ g.half_rate | qty }}% <span class="sub">on ₹ {{ g.taxable | inr }}</span></td><td class="num">₹ {{ g.cgst | inr }}</td></tr>
+                <tr><td class="k">SGST @ {{ g.half_rate | qty }}% <span class="sub">on ₹ {{ g.taxable | inr }}</span></td><td class="num">₹ {{ g.sgst | inr }}</td></tr>
+              {% endif %}
+            {% endfor %}
+            <tr class="rule"><td colspan="2"></td></tr>
+            <tr><td class="k">Total GST</td><td class="num">₹ {{ tax_total | inr }}</td></tr>
+          {% endif %}
+        </table>
+        <table class="grand">
+          <tr>
+            <td class="k">{% block grand_label %}{% endblock %}</td>
+            <td class="num v">₹ {{ grand_total | inr }}</td>
+          </tr>
+        </table>
+        {% block tax_note %}{% endblock %}
+      </td>
+    </tr>
+  </table>
+
+  <!-- Sign-off -->
+  <table class="signoff">
+    <tr>
+      <td class="thanks">{% block thanks %}{% endblock %}</td>
+      <td class="sign">
+        <div class="for">For {{ tenant.business_name }}</div>
+        <div class="line">Authorised signatory</div>
+      </td>
+    </tr>
+  </table>
+
+  <table class="footer">
+    <tr>
+      <td>{% block footer_note %}{% endblock %}</td>
+      <td class="brand"><span class="dot">●</span> Created with Munim</td>
+    </tr>
+  </table>
+
+</body>
+</html>

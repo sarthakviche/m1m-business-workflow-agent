@@ -22,7 +22,7 @@ class ConversationLog(Base):
     __tablename__ = "conversation_log"
     __table_args__ = (
         CheckConstraint(
-            "channel IN ('whatsapp','web')",
+            "channel IN ('whatsapp','web','telegram')",
             name="ck_convlog_channel",
         ),
         CheckConstraint(
@@ -31,6 +31,8 @@ class ConversationLog(Base):
         ),
         # Composite index for efficient per-tenant timeline queries
         Index("idx_convlog_tenant_time", "tenant_id", "created_at"),
+        # Per-conversation history lookups (Telegram/WhatsApp chats)
+        Index("idx_convlog_conversation_time", "conversation_id", "created_at"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -41,7 +43,9 @@ class ConversationLog(Base):
         ForeignKey("tenant.id", ondelete="CASCADE"),
         nullable=False,
     )
-    channel: Mapped[str] = mapped_column(Text, nullable=False)      # 'whatsapp' | 'web'
+    # Null for rows written before conversations were tracked.
+    conversation_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    channel: Mapped[str] = mapped_column(Text, nullable=False)      # 'whatsapp' | 'web' | 'telegram'
     direction: Mapped[str] = mapped_column(Text, nullable=False)    # 'inbound' | 'outbound'
     raw_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     detected_intent: Mapped[str | None] = mapped_column(Text, nullable=True)

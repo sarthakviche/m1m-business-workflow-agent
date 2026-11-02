@@ -206,6 +206,28 @@ npm run dev
 ```
 Frontend Web UI will be live at: **`http://localhost:5173`**
 
+### 🤖 5. Telegram Bot
+
+The bot runs the same orchestrator as web chat. Each Telegram chat must be linked to a business with a one-time code before it can create documents.
+
+1. Create a bot with [@BotFather](https://t.me/BotFather) and set `TELEGRAM_BOT_TOKEN` in `.env`.
+2. Apply migrations: `cd backend && ..\.venv\Scripts\alembic.exe upgrade head`
+3. Issue a link code, then send `/link CODE` to your bot:
+   ```powershell
+   .venv\Scripts\python.exe backend\scripts\telegram_bot.py link-code
+   ```
+4. **Local development** (no public URL needed): long-poll Telegram:
+   ```powershell
+   .venv\Scripts\python.exe backend\scripts\telegram_bot.py poll
+   ```
+5. **Production**: set `TELEGRAM_WEBHOOK_SECRET`, deploy the API behind HTTPS, then register the webhook:
+   ```powershell
+   .venv\Scripts\python.exe backend\scripts\telegram_bot.py set-webhook https://api.your-domain.com
+   ```
+   Telegram then calls `POST /api/v1/telegram/webhook`; requests without the matching secret header are rejected. Link codes can also be issued over HTTP with `POST /api/v1/telegram/link-codes` (authenticated by `X-API-Key`).
+
+Bot commands: `/quotations`, `/invoices`, `/pdf NUMBER`, `/cancel`, `/unlink`, `/help`. Document lists and PDFs are read straight from the database. Free text goes to the agent, and its replies come from the catalog and tool results.
+
 ---
 
 ## 🧪 Tests & Quality Assurance

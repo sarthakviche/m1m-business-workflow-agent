@@ -23,6 +23,7 @@ from httpx import AsyncClient, ASGITransport
 from sqlalchemy import select
 
 from app.agent.graph import agent_graph
+from app.orchestrator.context import RequestContext
 from app.config import get_settings
 from app.main import app
 from app.models.conversation_log import ConversationLog
@@ -104,7 +105,16 @@ async def test_missing_customer_name_prompts_directly(db_session, tenant_id_uuid
         "conversation_history": [],
         "full_conversation_text": "User: Create a quotation for 10 TMT steel rods",
     }
-    config = {"configurable": {"session": db_session}}
+    config = {
+        "configurable": {
+            "session": db_session,
+            "request_context": RequestContext(
+                business_id=tenant_id_uuid,
+                conversation_id=uuid.uuid4(),
+                channel="web"
+            )
+        }
+    }
     final_state = await agent_graph.ainvoke(initial_state, config=config)
 
     assert final_state.get("detected_intent") == "clarify"
@@ -122,7 +132,16 @@ async def test_missing_line_items_prompts_with_customer_name(db_session, tenant_
         "conversation_history": [],
         "full_conversation_text": "User: Create a quotation for Ramesh Traders",
     }
-    config = {"configurable": {"session": db_session}}
+    config = {
+        "configurable": {
+            "session": db_session,
+            "request_context": RequestContext(
+                business_id=tenant_id_uuid,
+                conversation_id=uuid.uuid4(),
+                channel="web"
+            )
+        }
+    }
     final_state = await agent_graph.ainvoke(initial_state, config=config)
 
     assert final_state.get("detected_intent") == "clarify"
@@ -487,7 +506,16 @@ async def test_agent_graph_quotation_flow(db_session, tenant_id_uuid):
         "channel": "web",
         "raw_message": "Create a quotation for Ramesh Traders for 2 TMT Steel Rods",
     }
-    config = {"configurable": {"session": db_session}}
+    config = {
+        "configurable": {
+            "session": db_session,
+            "request_context": RequestContext(
+                business_id=tenant_id_uuid,
+                conversation_id=uuid.uuid4(),
+                channel="web"
+            )
+        }
+    }
 
     result = await agent_graph.ainvoke(initial_state, config=config)
 
@@ -515,7 +543,16 @@ async def test_agent_quotation_near_miss_customer_triggers_confirmation(db_sessi
         "conversation_history": [],
         "full_conversation_text": "User: Create a quotation for Ramesh Trading for 5 TMT steel rods",
     }
-    config = {"configurable": {"session": db_session}}
+    config = {
+        "configurable": {
+            "session": db_session,
+            "request_context": RequestContext(
+                business_id=tenant_id_uuid,
+                conversation_id=uuid.uuid4(),
+                channel="web"
+            )
+        }
+    }
     final_state = await agent_graph.ainvoke(initial_state, config=config)
 
     assert final_state.get("customer_match_pending") is True
@@ -534,7 +571,16 @@ async def test_catalog_item_query_specific_item(db_session, tenant_id_uuid):
         "conversation_history": [],
         "full_conversation_text": "User: What's the price of Steel Rod 12mm?",
     }
-    config = {"configurable": {"session": db_session}}
+    config = {
+        "configurable": {
+            "session": db_session,
+            "request_context": RequestContext(
+                business_id=tenant_id_uuid,
+                conversation_id=uuid.uuid4(),
+                channel="web"
+            )
+        }
+    }
     final_state = await agent_graph.ainvoke(initial_state, config=config)
 
     assert final_state.get("detected_intent") == "catalog_query"
@@ -556,7 +602,16 @@ async def test_catalog_summary_query(db_session, tenant_id_uuid):
         "conversation_history": [],
         "full_conversation_text": "User: Show me all items in our catalog",
     }
-    config = {"configurable": {"session": db_session}}
+    config = {
+        "configurable": {
+            "session": db_session,
+            "request_context": RequestContext(
+                business_id=tenant_id_uuid,
+                conversation_id=uuid.uuid4(),
+                channel="web"
+            )
+        }
+    }
     final_state = await agent_graph.ainvoke(initial_state, config=config)
 
     assert final_state.get("detected_intent") == "catalog_query"
@@ -680,3 +735,72 @@ async def test_document_serve_path_traversal_rejected(tenant_id_uuid):
         # FastAPI will either 400 (our guard) or 404 after path normalisation;
         # in both cases it must NOT return 200.
         assert response.status_code in (400, 404)
+
+@pytest.mark.asyncio
+async def test_multi_turn_state_preservation(db_session, tenant_id_uuid):
+    """Verify that the ConversationStore correctly merges entities across multiple turns."""
+    from app.conversation.store import conversation_store
+    
+    conv_id = uuid.uuid4()
+    
+    # Turn 1: Provide only customer
+    initial_state_1 = {
+        "tenant_id": str(tenant_id_uuid),
+        "user_id": None,
+        "channel": "web",
+        "raw_message": "Create a quotation for Ramesh Traders",
+        "conversation_history": [],
+        "full_conversation_text": "User: Create a quotation for Ramesh Traders",
+    }
+    config_1 = {
+        "configurable": {
+            "session": db_session,
+            "request_context": RequestContext(
+                business_id=tenant_id_uuid,
+                conversation_id=conv_id,
+                channel="web"
+            )
+        }
+    }
+    
+    state_1 = await agent_graph.ainvoke(initial_state_1, config=config_1)
+    assert state_1["detected_intent"] == "clarify"
+    assert "Which items" in state_1["response_text"]
+    
+    # Verify store recorded the intent and customer
+    stored_state = await conversation_store.get(conv_id, tenant_id_uuid, db_session)
+    assert stored_state.pending_intent == "quotation"
+    assert stored_state.extracted_entities["customer_name"] == "Ramesh Traders"
+    
+    # Turn 2: Provide only items
+    initial_state_2 = {
+        "tenant_id": str(tenant_id_uuid),
+        "user_id": None,
+        "channel": "web",
+        "raw_message": "10 TMT steel rods",
+        "conversation_history": [
+            {"role": "user", "text": "Create a quotation for Ramesh Traders"},
+            {"role": "assistant", "text": "Which items and quantities should be included for **Ramesh Traders**?"}
+        ],
+        "full_conversation_text": "System: Which items and quantities should be included for **Ramesh Traders**?\nUser: 10 TMT steel rods",
+    }
+    config_2 = {
+        "configurable": {
+            "session": db_session,
+            "request_context": RequestContext(
+                business_id=tenant_id_uuid,
+                conversation_id=conv_id,
+                channel="web"
+            )
+        }
+    }
+    
+    state_2 = await agent_graph.ainvoke(initial_state_2, config=config_2)
+    
+    # Should resolve to quotation and auto-create the missing customer + item
+    assert state_2["detected_intent"] == "quotation"
+    assert "Ramesh Traders" in state_2["response_text"]
+    
+    # Verify store was cleared on success
+    final_store = await conversation_store.get(conv_id, tenant_id_uuid, db_session)
+    assert final_store is None

@@ -10,8 +10,11 @@ Flow:
 
 from __future__ import annotations
 
+import asyncio
+import re
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, AsyncIterator, Dict, List, Tuple
 
@@ -52,56 +55,149 @@ async def _get_session(config: RunnableConfig) -> AsyncIterator[AsyncSession]:
             await sess.commit()
 
 
-async def classify_intent_node(state: AgentState) -> Dict[str, Any]:
+async def classify_intent_node(state: AgentState, config: RunnableConfig) -> Dict[str, Any]:
     """Node: Classifies user message intent and extracts structured entities with conversation context."""
+    from app.conversation.store import conversation_store
+    from app.conversation.state import ConversationState
+
+    context = config["configurable"]["request_context"]
     raw_message = state.get("raw_message", "")
     conversation_context = state.get("full_conversation_text", "")
     
-    res = classify_intent_sync(raw_message, conversation_context)
+    async with _get_session(config) as session:
+        # 1. Load existing state
+        conv_state = await conversation_store.get(context.conversation_id, context.business_id, session)
+        if not conv_state:
+            conv_state = ConversationState(
+                conversation_id=context.conversation_id,
+                business_id=context.business_id
+            )
 
-    extracted = {
+        # 2. Extract new entities. The Gemini SDK call is blocking, so run it off
+        # the event loop to keep other chats responsive.
+        res = await asyncio.to_thread(classify_intent_sync, raw_message, conversation_context)
+        return await _resolve_intent(conv_state, res, raw_message, session)
+
+
+# A reply that is only a quantity, e.g. "50", "50 pcs", "12.5 kg".
+_BARE_QUANTITY = re.compile(
+    r"^\s*(\d+(?:\.\d+)?)\s*(?:kg|kgs|pcs|pc|nos|units?|pieces?|mtr|m|box|boxes|ltr|l|ton|tons|bags?)?\s*\.?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _items_missing_quantity(entities: Dict[str, Any]) -> List[str]:
+    return [li.get("item_name") or "item" for li in entities.get("line_items") or [] if li.get("quantity") is None]
+
+
+def _fill_missing_quantity(conv_state, raw_message: str) -> bool:
+    """Answer to "How many X?": put a bare quantity on the first line still missing one."""
+    match = _BARE_QUANTITY.match(raw_message or "")
+    if not match:
+        return False
+    for li in conv_state.extracted_entities.get("line_items") or []:
+        if li.get("quantity") is None:
+            li["quantity"] = float(match.group(1))
+            return True
+    return False
+
+
+async def _resolve_intent(conv_state, res, raw_message: str, session: AsyncSession) -> Dict[str, Any]:
+    """Merge a classification into the conversation state and decide what is still missing."""
+    from app.conversation.store import conversation_store
+
+    # 3. Handle intent continuation
+    detected_intent = res.intent
+    if detected_intent in ("unknown", "clarify") and conv_state.pending_intent:
+        detected_intent = conv_state.pending_intent
+
+    # 4. Merge entities. A bare quantity answering "How many X?" is applied
+    # directly. Otherwise, a message naming both a customer and items is a
+    # complete request on its own: start fresh so leftovers from an earlier,
+    # unfinished request can never leak into this document.
+    if conv_state.pending_intent and _fill_missing_quantity(conv_state, raw_message):
+        detected_intent = conv_state.pending_intent
+        res = res.model_copy(update={"customer_name": None, "line_items": [], "catalog_item_name": None})
+    elif res.customer_name and res.line_items:
+        conv_state.extracted_entities = {}
+    conv_state.update_entities({
         "customer_name": res.customer_name,
-        "line_items": [i.model_dump() for i in res.line_items],
+        "line_items": [i.model_dump() for i in res.line_items] if res.line_items else None,
         "quotation_number": res.quotation_number,
         "is_quotation_conversion": res.is_quotation_conversion,
         "catalog_item_name": res.catalog_item_name,
-    }
+    })
 
+    extracted = conv_state.extracted_entities
     missing_fields: List[str] = []
-    detected_intent = res.intent
 
+    # 5. Determine missing fields based on MERGED state
     if detected_intent == "quotation":
-        if not res.customer_name:
+        if not extracted.get("customer_name"):
             missing_fields.append("customer_name")
-        if not res.line_items:
+        if not extracted.get("line_items"):
             missing_fields.append("line_items")
+        elif _items_missing_quantity(extracted):
+            missing_fields.append("quantity")
         if missing_fields:
             detected_intent = "clarify"
+            conv_state.pending_intent = "quotation"
+        else:
+            conv_state.pending_intent = None
 
     elif detected_intent == "invoice":
-        if res.is_quotation_conversion:
-            if not res.quotation_number:
+        if extracted.get("is_quotation_conversion"):
+            if not extracted.get("quotation_number"):
                 missing_fields.append("quotation_number")
                 detected_intent = "clarify"
+                conv_state.pending_intent = "invoice"
+            else:
+                conv_state.pending_intent = None
         else:
-            if not res.customer_name:
+            if not extracted.get("customer_name"):
                 missing_fields.append("customer_name")
-            if not res.line_items:
+            if not extracted.get("line_items"):
                 missing_fields.append("line_items")
+            elif _items_missing_quantity(extracted):
+                missing_fields.append("quantity")
             if missing_fields:
                 detected_intent = "clarify"
+                conv_state.pending_intent = "invoice"
+            else:
+                conv_state.pending_intent = None
+    else:
+        # Clear pending if they switched topics to catalog or off-topic
+        conv_state.pending_intent = None
+
+    # Persist state only while a workflow is waiting on the user.
+    if conv_state.pending_intent:
+        await conversation_store.save(conv_state, session)
+    else:
+        await conversation_store.clear(conv_state.conversation_id, session)
 
     response_text = ""
     if detected_intent == "clarify":
         if "customer_name" in missing_fields and "line_items" in missing_fields:
-            response_text = "Please specify the customer name and the items/quantities you would like to include."
+            response_text = (
+                "I'd be happy to help! To get started, I need:\n"
+                "1. **Customer name** — who is this for?\n"
+                "2. **Items + quantities** — what would you like to include?\n\n"
+                "Example: _Create a quotation for Ramesh Traders, 10 kg TMT Steel Rod 12mm_"
+            )
         elif "customer_name" in missing_fields:
             response_text = "Which customer should this document be prepared for?"
         elif "line_items" in missing_fields:
-            if res.customer_name:
-                response_text = f"Which items and quantities should be included for **{res.customer_name}**?"
+            if extracted.get("customer_name"):
+                response_text = f"Which items and quantities should be included for **{extracted.get('customer_name')}**?"
             else:
                 response_text = "Which items and quantities should be included?"
+        elif "quantity" in missing_fields:
+            names = _items_missing_quantity(extracted)
+            if len(names) == 1:
+                response_text = f"How many **{names[0]}** should I include?"
+            else:
+                listed = ", ".join(f"**{n}**" for n in names)
+                response_text = f"Please tell me the quantity for each item: {listed}. Example: _10 {names[0]}_"
         elif "quotation_number" in missing_fields:
             response_text = "Please provide the quotation number you wish to convert (e.g. Q-202608-001)."
         else:
@@ -125,202 +221,116 @@ def route_by_intent(state: AgentState) -> str:
         return "invoice_agent"
     elif intent == "catalog_query":
         return "catalog_agent"
-    elif intent == "out_of_scope":
+    elif intent in ("out_of_scope", "off_topic", "future_feature"):
         return "out_of_scope_agent"
     return "clarify_agent"
 
 
 async def quotation_agent_node(state: AgentState, config: RunnableConfig) -> Dict[str, Any]:
-    """Node: Handles Quotation creation deterministically with customer auto-creation."""
-    tenant_id = uuid.UUID(state["tenant_id"])
+    """Node: Handles Quotation creation via ToolRegistry."""
+    from app.tools.registry import registry
+    from app.errors.categories import InsufficientInformationError, MunimError
+    
+    context = config["configurable"]["request_context"]
     entities = state.get("extracted_entities", {})
-
+    
+    tool = registry.get("create_quotation")
+    args = {
+        "customer_name": entities.get("customer_name") or "",
+        "line_items": entities.get("line_items") or []
+    }
+    
     async with _get_session(config) as session:
-        cust_name = entities.get("customer_name")
-        match_result = await lookup_customer_scored(session, tenant_id, cust_name)
-        customer_auto_created = False
-
-        if match_result.match_type in ("exact", "fuzzy_high"):
-            customer = match_result.customer
-        elif match_result.match_type == "fuzzy_medium":
-            # 0.4 to 0.8 band: ask confirmation, do not auto-match
+        try:
+            result = await tool.invoke(args, context, session)
+            data = result.data
+            
+            from app.conversation.store import conversation_store
+            await conversation_store.clear(context.conversation_id, session)
+            
             return {
-                "response_text": f"Did you mean **{match_result.customer.name}**? Or is this a new customer?",
-                "requires_confirmation": True,
-                "customer_match_pending": True,
-                "customer_match_candidate_name": match_result.customer.name,
-                "customer_match_candidate_id": str(match_result.customer.id),
-                "customer_match_input_name": cust_name,
-                "document_type": None,
+                "response_text": data["response_text"],
+                "document_type": "quotation",
+                "document_id": data["quotation_id"],
+                "document_number": data["quotation_number"],
+                "pdf_url": data["pdf_url"],
+                "response_attachments": [{"type": "pdf", "url": data["pdf_url"]}],
+                "data": data,
             }
-        else:
-            # Below 0.4: auto-create as new customer
-            customer = await create_customer_if_missing(session, tenant_id, cust_name)
-            customer_auto_created = True
-
-        raw_items = entities.get("line_items", [])
-        resolved_items: List[Tuple[Item, Decimal]] = []
-
-        for item_data in raw_items:
-            i_name = item_data.get("item_name", "")
-            qty = Decimal(str(item_data.get("quantity", 1.0)))
-            item = await lookup_item(session, tenant_id, i_name)
-            if not item:
-                return {
-                    "response_text": f"Item **'{i_name}'** was not found in your catalog. Please check the item name or add it with HSN code, GST rate, and unit price.",
-                    "document_type": None,
-                }
-            resolved_items.append((item, qty))
-
-        # Create quotation
-        result = await create_quotation(session, tenant_id, customer, resolved_items)
-        response_text = result["response_text"]
-        if customer_auto_created:
-            response_text += f"\n\n_Note: I've added **{customer.name}** as a new customer — let me know if that's wrong._"
-
-        return {
-            "response_text": response_text,
-            "document_type": "quotation",
-            "document_id": result["quotation_id"],
-            "document_number": result["quotation_number"],
-            "pdf_url": result["pdf_url"],
-            "customer_was_auto_created": customer_auto_created,
-            "response_attachments": [{"type": "pdf", "url": result["pdf_url"]}],
-            "data": result,
-        }
+        except InsufficientInformationError as err:
+            is_fuzzy = "fuzzy" in err.detail.lower()
+            return {
+                "response_text": err.user_message,
+                "document_type": None,
+                "requires_confirmation": is_fuzzy,
+                "customer_match_pending": is_fuzzy,
+            }
+        except MunimError as err:
+            return {"response_text": err.user_message, "document_type": None}
 
 
 async def invoice_agent_node(state: AgentState, config: RunnableConfig) -> Dict[str, Any]:
-    """Node: Handles Tax Invoice creation (direct and quotation conversion)."""
-    tenant_id = uuid.UUID(state["tenant_id"])
+    """Node: Handles Tax Invoice creation via ToolRegistry."""
+    from app.tools.registry import registry
+    from app.errors.categories import InsufficientInformationError, MunimError
+    
+    context = config["configurable"]["request_context"]
     entities = state.get("extracted_entities", {})
-
+    
     async with _get_session(config) as session:
-        # Flow B: Quotation Conversion
-        if entities.get("is_quotation_conversion"):
-            q_num = entities.get("quotation_number") or ""
-            try:
-                result = await convert_quotation_to_invoice(session, tenant_id, q_num)
-                return {
-                    "response_text": result["response_text"],
-                    "document_type": "invoice",
-                    "document_id": result["invoice_id"],
-                    "document_number": result["invoice_number"],
-                    "pdf_url": result["pdf_url"],
-                    "response_attachments": [{"type": "pdf", "url": result["pdf_url"]}],
-                    "data": result,
-                }
-            except (QuotationNotFoundError, InsufficientStockError, ValueError) as err:
-                return {
-                    "response_text": f"Cannot convert quotation: {str(err)}",
-                    "document_type": None,
-                }
-
-        # Flow A: Direct Invoice
-        cust_name = entities.get("customer_name")
-        match_result = await lookup_customer_scored(session, tenant_id, cust_name)
-        customer_auto_created = False
-
-        if match_result.match_type in ("exact", "fuzzy_high"):
-            customer = match_result.customer
-        elif match_result.match_type == "fuzzy_medium":
-            # 0.4 to 0.8 band: ask confirmation, do not auto-match
-            return {
-                "response_text": f"Did you mean **{match_result.customer.name}**? Or is this a new customer?",
-                "requires_confirmation": True,
-                "customer_match_pending": True,
-                "customer_match_candidate_name": match_result.customer.name,
-                "customer_match_candidate_id": str(match_result.customer.id),
-                "customer_match_input_name": cust_name,
-                "document_type": None,
-            }
-        else:
-            # Below 0.4: auto-create as new customer
-            customer = await create_customer_if_missing(session, tenant_id, cust_name)
-            customer_auto_created = True
-
-        raw_items = entities.get("line_items", [])
-        resolved_items: List[Tuple[Item, Decimal]] = []
-
-        for item_data in raw_items:
-            i_name = item_data.get("item_name", "")
-            qty = Decimal(str(item_data.get("quantity", 1.0)))
-            item = await lookup_item(session, tenant_id, i_name)
-            if not item:
-                return {
-                    "response_text": f"Item **'{i_name}'** was not found in your catalog. Please check the item name or add it with HSN code, GST rate, and unit price.",
-                    "document_type": None,
-                }
-            resolved_items.append((item, qty))
-
         try:
-            result = await create_direct_invoice(session, tenant_id, customer, resolved_items)
-            response_text = result["response_text"]
-            if customer_auto_created:
-                response_text += f"\n\n_Note: I've added **{customer.name}** as a new customer — let me know if that's wrong._"
+            if entities.get("is_quotation_conversion"):
+                tool = registry.get("convert_quotation")
+                args = {"quotation_number": entities.get("quotation_number") or ""}
+            else:
+                tool = registry.get("create_invoice")
+                args = {
+                    "customer_name": entities.get("customer_name") or "",
+                    "line_items": entities.get("line_items") or []
+                }
+            
+            result = await tool.invoke(args, context, session)
+            data = result.data
+
+            from app.conversation.store import conversation_store
+            await conversation_store.clear(context.conversation_id, session)
 
             return {
-                "response_text": response_text,
+                "response_text": data["response_text"],
                 "document_type": "invoice",
-                "document_id": result["invoice_id"],
-                "document_number": result["invoice_number"],
-                "pdf_url": result["pdf_url"],
-                "customer_was_auto_created": customer_auto_created,
-                "response_attachments": [{"type": "pdf", "url": result["pdf_url"]}],
-                "data": result,
+                "document_id": data["invoice_id"],
+                "document_number": data["invoice_number"],
+                "pdf_url": data["pdf_url"],
+                "response_attachments": [{"type": "pdf", "url": data["pdf_url"]}],
+                "data": data,
             }
-        except InsufficientStockError as err:
-            return {
-                "response_text": f"⚠️ **Invoice creation failed:** {str(err)} No invoice was created and stock remains unchanged.",
-                "document_type": None,
-            }
-        except Exception as err:
-            return {
-                "response_text": f"⚠️ **Invoice creation error:** {str(err)}",
-                "document_type": None,
-            }
-
+        except InsufficientInformationError as err:
+            return {"response_text": err.user_message, "document_type": None, "requires_confirmation": "fuzzy" in err.detail.lower()}
+        except MunimError as err:
+            return {"response_text": err.user_message, "document_type": None}
 
 async def catalog_agent_node(state: AgentState, config: RunnableConfig) -> Dict[str, Any]:
-    """Node: Handles read-only price, rate, stock, and catalog listing queries."""
-    tenant_id = uuid.UUID(state["tenant_id"])
+    """Node: Handles read-only catalog queries via ToolRegistry."""
+    from app.tools.registry import registry
+    from app.errors.categories import MunimError
+    
+    context = config["configurable"]["request_context"]
     entities = state.get("extracted_entities", {})
     item_query = entities.get("catalog_item_name")
-
+    
+    tool = registry.get("search_products")
+    args = {"item_name": item_query}
+    
     async with _get_session(config) as session:
-        if item_query:
-            details = await lookup_catalog_item_details(session, tenant_id, item_query)
-            if details["found"]:
-                hsn_str = f" (HSN: {details['hsn_code']})" if details.get("hsn_code") else ""
-                response_text = (
-                    f"**{details['name']}**{hsn_str}:\n"
-                    f"• Unit Price: ₹{details['unit_price']:.2f} per {details['unit']}\n"
-                    f"• GST Rate: {details['gst_rate_percent']:.0f}%\n"
-                    f"• Stock Available: {details['stock_available']:.2f} {details['unit']}"
-                )
-                return {
-                    "response_text": response_text,
-                    "document_type": None,
-                    "data": details,
-                }
-            else:
-                return {
-                    "response_text": f"Item **'{item_query}'** was not found in your catalog. Please check the item name.",
-                    "document_type": None,
-                }
-        else:
-            summary = await list_catalog_summary(session, tenant_id, limit=6)
-            lines = [f"Here are items from your catalog ({summary['total_count']} total):"]
-            for item in summary["displayed_items"]:
-                lines.append(f"• **{item['name']}** — ₹{item['unit_price']:.2f}/{item['unit']} ({item['gst_rate_percent']:.0f}% GST) | Stock: {item['stock_available']} {item['unit']}")
-            if summary["has_more"]:
-                lines.append(f"\n_Showing first 6 of {summary['total_count']} items._")
-            
+        try:
+            result = await tool.invoke(args, context, session)
             return {
-                "response_text": "\n".join(lines),
+                "response_text": result.data["response_text"],
                 "document_type": None,
-                "data": summary,
+                "data": result.data,
             }
+        except MunimError as err:
+            return {"response_text": err.user_message, "document_type": None}
 
 
 async def clarify_agent_node(state: AgentState) -> Dict[str, Any]:
@@ -330,11 +340,23 @@ async def clarify_agent_node(state: AgentState) -> Dict[str, Any]:
 
 
 async def out_of_scope_agent_node(state: AgentState) -> Dict[str, Any]:
-    """Node: Informs user that requested feature is out of Sprint 1 scope."""
+    """Node: Handles future features and off-topic messages."""
+    intent = state.get("detected_intent", "")
+    if intent == "off_topic":
+        return {
+            "response_text": (
+                "I'm Munim, your business assistant! I can help you with:\n"
+                "• Creating **Quotations** for customers\n"
+                "• Generating **GST Tax Invoices**\n"
+                "• Converting quotations to invoices\n"
+                "• Checking item **prices and stock**\n\n"
+                "What would you like to do?"
+            )
+        }
     return {
         "response_text": (
-            "This capability (dues reminders, stock queries, accounting sync) is part of a future sprint. "
-            "Currently in Sprint 1, I can create **Quotations**, generate **Tax Invoices**, and **convert Quotations into Invoices**."
+            "This feature (dues reminders, accounting sync, reports) is coming soon! "
+            "Right now I can create **Quotations**, **Tax Invoices**, and check your **catalog**."
         )
     }
 
@@ -345,14 +367,21 @@ async def log_conversation_node(state: AgentState, config: RunnableConfig) -> Di
     channel = state.get("channel", "web")
     raw_message = state.get("raw_message", "")
     intent = state.get("detected_intent")
+    request_context = (config or {}).get("configurable", {}).get("request_context")
+    conversation_id = request_context.conversation_id if request_context else None
+    # One explicit timestamp per turn; history readers order by
+    # (created_at, direction) so 'inbound' always precedes 'outbound'.
+    turn_time = datetime.now(timezone.utc)
 
     async with _get_session(config) as session:
         # Inbound message log
         inbound_log = ConversationLog(
             id=uuid.uuid4(),
             tenant_id=tenant_id,
+            conversation_id=conversation_id,
             channel=channel,
             direction="inbound",
+            created_at=turn_time,
             raw_message=raw_message,
             detected_intent=intent,
             agent_invoked=intent,
@@ -363,8 +392,10 @@ async def log_conversation_node(state: AgentState, config: RunnableConfig) -> Di
         outbound_log = ConversationLog(
             id=uuid.uuid4(),
             tenant_id=tenant_id,
+            conversation_id=conversation_id,
             channel=channel,
             direction="outbound",
+            created_at=turn_time,
             raw_message=state.get("response_text", ""),
             detected_intent=intent,
             agent_invoked=intent,

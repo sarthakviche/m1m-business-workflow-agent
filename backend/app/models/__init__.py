@@ -18,6 +18,8 @@ from app.models.quotation import Quotation, QuotationLine
 from app.models.invoice import Invoice, InvoiceLine
 from app.models.payment import Payment
 from app.models.conversation_log import ConversationLog
+from app.models.conversation_state import ConversationStateRecord
+from app.models.channel import ChannelIdentity, ChannelLinkCode, ChannelInboundEvent
 from app.models.tally import TallyConnection, ExternalIdMap
 
 __all__ = [
@@ -32,6 +34,10 @@ __all__ = [
     "InvoiceLine",
     "Payment",
     "ConversationLog",
+    "ConversationStateRecord",
+    "ChannelIdentity",
+    "ChannelLinkCode",
+    "ChannelInboundEvent",
     "TallyConnection",
     "ExternalIdMap",
 ]

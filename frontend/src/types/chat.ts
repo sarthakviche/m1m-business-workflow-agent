@@ -57,12 +57,14 @@ export interface InvoiceData {
 
 export interface ChatResponse {
   response_text: string;
-  intent: 'quotation' | 'invoice' | 'clarify' | 'out_of_scope' | null;
+  intent: string | null;
   document_type: 'quotation' | 'invoice' | null;
   document_id: string | null;
   document_number: string | null;
   pdf_url: string | null;
   data: QuotationData | InvoiceData | null;
+  success: boolean;
+  error_code: string | null;
 }
 
 export interface DocumentHistoryItem {
@@ -87,9 +89,9 @@ export interface ChatMessage {
   role: MessageRole;
   text: string;
   timestamp: Date;
-  document_type?: 'quotation' | 'invoice' | 'documents_list';
+  document_type?: 'quotation' | 'invoice';
   document_data?: QuotationData | InvoiceData;
-  documents_list?: DocumentHistoryItem[];
   pdf_url?: string | null;
+  /** Transport/server failure shown to the user but excluded from history. */
+  failed?: boolean;
 }
-

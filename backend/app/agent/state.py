@@ -23,7 +23,7 @@ class AgentState(TypedDict, total=False):
     # Multi-tenant and session routing context
     tenant_id: str
     user_id: Optional[str]
-    channel: Literal["whatsapp", "web"]
+    channel: Literal["whatsapp", "web", "telegram"]
     raw_message: str
     
     # Conversation history for context awareness

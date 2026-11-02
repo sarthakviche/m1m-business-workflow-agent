@@ -1,90 +1,69 @@
-import { useEffect, useState } from 'react'
-import { API_BASE, TEST_PHONE } from '../api/config';
-
-interface Customer {
-  id: string
-  name: string
-  phone: string | null
-  gstin: string | null
-  state: string | null
-  address: string | null
-  created_at: string
-}
-
-
+import { useMemo, useState } from 'react'
+import { api } from '../api/client'
+import { IconUsers } from '../components/icons'
+import { Badge, Card, EmptyState, ErrorState, Page, PageHeader, SearchInput, SkeletonRows } from '../components/ui'
+import { useAsync } from '../hooks/useAsync'
+import { formatINR, initials } from '../lib/format'
 
 export default function Customers() {
-  const [customers, setCustomers] = useState<Customer[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const { data, error, loading, reload } = useAsync(api.customers)
+  const [query, setQuery] = useState('')
 
-  useEffect(() => {
-    fetch(`${API_BASE}/customers/?phone=`)
-      .then(res => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        return res.json()
-      })
-      .then(data => {
-        setCustomers(data)
-        setLoading(false)
-      })
-      .catch(() => {
-        fetch('/customers/?phone=')
-          .then(res => res.json())
-          .then(data => {
-            setCustomers(data)
-            setLoading(false)
-          })
-          .catch(() => {
-            setError('Failed to fetch customer list from backend.')
-            setLoading(false)
-          })
-      })
-  }, [])
+  const customers = useMemo(() => data ?? [], [data])
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return customers
+    return customers.filter((c) =>
+      [c.name, c.gstin, c.phone, c.state].some((v) => v?.toLowerCase().includes(q)))
+  }, [customers, query])
 
   return (
-    <div style={{ padding: '24px', fontFamily: 'Inter, system-ui, sans-serif', backgroundColor: '#0f172a', color: '#f8fafc', minHeight: '100vh' }}>
-      <header style={{ marginBottom: '24px' }}>
-        <h1 style={{ margin: 0, fontSize: '28px', color: '#38bdf8' }}>Customers Directory</h1>
-        <p style={{ margin: '4px 0 0', color: '#94a3b8' }}>Real database customer retrieval with tenant isolation</p>
-      </header>
+    <Page>
+      <PageHeader title="Customers"
+        description="Customers are added automatically the first time you quote or bill them." />
 
-      <nav style={{ display: 'flex', gap: '12px', marginBottom: '24px', flexWrap: 'wrap' }}>
-        <a href="/chat" style={{ color: '#fff', padding: '8px 16px', borderRadius: '6px', background: '#00a884', textDecoration: 'none', fontWeight: 600 }}>← M1M Chat</a>
-        <a href="/dashboard" style={{ color: '#94a3b8', padding: '8px 16px', borderRadius: '6px', textDecoration: 'none' }}>Dashboard</a>
-        <a href="/customers" style={{ color: '#38bdf8', padding: '8px 16px', borderRadius: '6px', background: '#1e293b', textDecoration: 'none', fontWeight: 600 }}>Customers</a>
-        <a href="/inventory" style={{ color: '#94a3b8', padding: '8px 16px', borderRadius: '6px', textDecoration: 'none' }}>Inventory</a>
-        <a href="/documents" style={{ color: '#94a3b8', padding: '8px 16px', borderRadius: '6px', textDecoration: 'none' }}>Invoices & Quotations</a>
-        <a href="/chat" style={{ color: '#94a3b8', padding: '8px 16px', borderRadius: '6px', textDecoration: 'none' }}>Copilot Chat</a>
-      </nav>
+      <Card>
+        <div className="flex items-center justify-between gap-3 border-b border-slate-100 p-4">
+          <p className="hidden text-sm text-slate-500 sm:block">
+            {loading ? 'Loading…' : `${customers.length} customer${customers.length === 1 ? '' : 's'}`}
+          </p>
+          <SearchInput value={query} onChange={setQuery} placeholder="Search name, GSTIN, phone, state" />
+        </div>
 
-      {loading && <div style={{ color: '#94a3b8' }}>Loading customers...</div>}
-      {error && <div style={{ color: '#f87171', padding: '12px', background: '#450a0a', borderRadius: '6px' }}>{error}</div>}
-
-      {!loading && !error && (
-        <table style={{ width: '100%', borderCollapse: 'collapse', background: '#1e293b', borderRadius: '8px', overflow: 'hidden' }}>
-          <thead>
-            <tr style={{ background: '#334155', color: '#38bdf8', textAlign: 'left' }}>
-              <th style={{ padding: '12px' }}>Customer Name</th>
-              <th style={{ padding: '12px' }}>Phone</th>
-              <th style={{ padding: '12px' }}>State</th>
-              <th style={{ padding: '12px' }}>GSTIN</th>
-              <th style={{ padding: '12px' }}>Address</th>
-            </tr>
-          </thead>
-          <tbody>
-            {customers.map((c, idx) => (
-              <tr key={c.id} style={{ borderBottom: '1px solid #334155', background: idx % 2 === 0 ? '#1e293b' : '#0f172a' }}>
-                <td style={{ padding: '12px', fontWeight: 600 }}>{c.name}</td>
-                <td style={{ padding: '12px' }}>{c.phone || 'N/A'}</td>
-                <td style={{ padding: '12px' }}>{c.state || 'N/A'}</td>
-                <td style={{ padding: '12px' }}>{c.gstin || 'N/A'}</td>
-                <td style={{ padding: '12px' }}>{c.address || 'N/A'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </div>
+        {error ? <ErrorState message={error} onRetry={reload} />
+          : loading ? <SkeletonRows />
+          : customers.length === 0 ? (
+            <EmptyState icon={<IconUsers />} title="No customers yet"
+              description="Create a quotation or invoice for someone and they'll be saved here." />
+          ) : visible.length === 0 ? (
+            <EmptyState icon={<IconUsers />} title="No matches" description="No customer matches that search." />
+          ) : (
+            <ul className="divide-y divide-slate-100">
+              {visible.map((c) => (
+                <li key={c.id} className="flex items-center gap-3 px-5 py-4 sm:gap-4">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-bold text-slate-600">
+                    {initials(c.name)}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-semibold text-slate-900">{c.name}</p>
+                      {c.state && <Badge>{c.state}</Badge>}
+                    </div>
+                    <p className="mt-0.5 truncate text-sm text-slate-500">
+                      {[c.gstin ? `GSTIN ${c.gstin}` : 'No GSTIN', c.phone].filter(Boolean).join(' · ')}
+                    </p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className="font-semibold tabular-nums text-slate-900">{formatINR(c.total_billed, { compact: true })}</p>
+                    <p className="text-xs text-slate-500">
+                      {c.invoice_count} inv · {c.quotation_count} quote{c.quotation_count === 1 ? '' : 's'}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+      </Card>
+    </Page>
   )
 }
