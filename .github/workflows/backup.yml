@@ -1,0 +1,45 @@
+name: Database backup
+
+# The Supabase free plan has no backups, and this is financial data.
+# Scheduled runs only happen from the default branch. Needs two repository secrets:
+#   BACKUP_DATABASE_URL  Session pooler connection string (postgresql://...)
+#   BACKUP_PASSPHRASE    Long random passphrase. Keep a copy outside GitHub, or the
+#                        backups can't be restored.
+
+on:
+  schedule:
+    - cron: "30 20 * * *"  # 02:00 IST
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install the PostgreSQL 17 client (must match the server)
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-client-17
+
+      - name: Dump and encrypt (public data and login accounts)
+        shell: bash
+        env:
+          BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          /usr/lib/postgresql/17/bin/pg_dump "$BACKUP_DATABASE_URL" --format=custom --no-owner --schema=public --schema=auth \
+            | gpg --batch --yes --symmetric --cipher-algo AES256 --passphrase-fd 3 -o munim.dump.gpg 3<<<"$BACKUP_PASSPHRASE"
+          # An empty or failed dump must fail the run, so it shows up as a failure email.
+          test "$(stat -c%s munim.dump.gpg)" -gt 10000
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: munim-backup-${{ github.run_number }}
+          path: munim.dump.gpg
+          retention-days: 30
+          compression-level: 0
