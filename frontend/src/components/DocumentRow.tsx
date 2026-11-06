@@ -1,6 +1,6 @@
-import { documentUrl } from '../api/client'
 import { formatDate, formatINR } from '../lib/format'
 import { IconDownload, IconFile, IconReceipt } from './icons'
+import PdfLink from './PdfLink'
 import { StatusBadge } from './ui'
 
 export interface DocumentRowData {
@@ -31,11 +31,10 @@ export default function DocumentRow({ doc }: { doc: DocumentRowData }) {
       </div>
       <p className="hidden shrink-0 text-right font-semibold tabular-nums text-slate-900 sm:block">{formatINR(doc.total)}</p>
       {doc.pdf_url ? (
-        <a href={documentUrl(doc.pdf_url)} target="_blank" rel="noreferrer"
-          aria-label={`Open PDF for ${doc.document_number}`}
+        <PdfLink pdfUrl={doc.pdf_url} label={`Open PDF for ${doc.document_number}`}
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 text-slate-600 transition-colors hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600">
           <IconDownload size={18} />
-        </a>
+        </PdfLink>
       ) : (
         <span className="h-9 w-9 shrink-0" />
       )}
