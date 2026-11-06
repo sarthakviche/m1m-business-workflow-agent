@@ -1,0 +1,47 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0}
+body{width:1920px;height:1080px;overflow:hidden;font-family:Inter,sans-serif;color:#fff7ed;position:relative;
+ background:radial-gradient(1200px 800px at 68% 58%,#3a1606 0%,#1a0b04 45%,#0b0604 100%)}
+.pool{position:absolute;left:820px;top:260px;width:1000px;height:700px;border-radius:50%;
+ background:radial-gradient(closest-side,rgba(249,115,22,.42),rgba(249,115,22,0));filter:blur(30px)}
+.grid{position:absolute;inset:0;background-image:linear-gradient(rgba(255,237,213,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(255,237,213,.04) 1px,transparent 1px);background-size:80px 80px;
+ -webkit-mask-image:radial-gradient(900px 600px at 65% 55%,#000,transparent)}
+.brand{position:absolute;left:120px;top:110px;display:flex;align-items:center;gap:16px}
+.tile{width:52px;height:52px;border-radius:15px;background:linear-gradient(135deg,#ea580c,#f97316 50%,#fb923c);color:#fff;font:800 28px 'Plus Jakarta Sans';display:flex;align-items:center;justify-content:center;box-shadow:0 0 40px rgba(249,115,22,.55)}
+.brand b{font:700 28px 'Plus Jakarta Sans'}
+h1{position:absolute;left:120px;top:360px;width:760px;font:800 96px/1.02 'Plus Jakarta Sans';letter-spacing:-.04em}
+h1 em{font-style:normal;background:linear-gradient(135deg,#fb923c,#f97316 40%,#fdba74);-webkit-background-clip:text;color:transparent}
+.sub{position:absolute;left:120px;top:720px;width:640px;font-size:27px;line-height:1.45;color:rgba(255,237,213,.62)}
+.bubble{position:absolute;left:880px;top:200px;max-width:720px;padding:26px 32px;border-radius:26px 26px 8px 26px;
+ background:rgba(255,247,237,.08);border:1px solid rgba(255,237,213,.16);font-size:29px;font-weight:500;color:#fff7ed;backdrop-filter:blur(8px)}
+.bubble small{display:block;font-size:16px;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,237,213,.5);margin-bottom:10px}
+.card{position:absolute;left:1060px;top:400px;width:680px;border-radius:28px;overflow:hidden;background:#fff;color:#0f172a;
+ box-shadow:0 0 0 1px rgba(249,115,22,.5),0 0 90px rgba(249,115,22,.45),0 50px 120px rgba(0,0,0,.6);transform:rotate(-1.5deg)}
+.hd{display:flex;align-items:center;gap:18px;padding:26px 30px;border-bottom:1px solid #f1f5f9}
+.ic{width:58px;height:58px;border-radius:16px;background:#fff7ed;display:flex;align-items:center;justify-content:center}
+.lab{font-size:16px;font-weight:600;letter-spacing:.08em;color:#64748b;text-transform:uppercase}
+.num{font-size:27px;font-weight:700;margin-top:4px}
+.line{display:flex;justify-content:space-between;padding:24px 30px;font-size:23px}
+.line small{display:block;color:#64748b;font-size:19px;margin-top:6px}
+.tot{display:flex;justify-content:space-between;padding:24px 30px;background:#fff7ed;border-top:1px solid #ffedd5;font-size:30px;font-weight:800}
+.dl{padding:22px;text-align:center;background:linear-gradient(135deg,#ea580c,#f97316);color:#fff;font-weight:700;font-size:22px}
+.spark{position:absolute;left:1690px;top:360px;font:700 18px Inter;letter-spacing:.1em;color:#fdba74;text-transform:uppercase}
+.tag{position:absolute;left:120px;bottom:64px;font-size:16px;color:rgba(255,237,213,.35);letter-spacing:.06em}
+</style></head><body>
+<div class="grid"></div><div class="pool"></div>
+<div class="brand"><div class="tile">M</div><b>Munim</b></div>
+<h1>Type the order.<br><em>Munim</em> does the paperwork.</h1>
+<div class="sub">GST-ready quotations and invoices from one plain-language message.</div>
+<div class="bubble"><small>You · 10:42</small>Quotation for Ramesh Traders, 10 TMT Steel Rod 12mm</div>
+<div class="card">
+ <div class="hd"><div class="ic"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ea580c" stroke-width="2"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg></div>
+  <div><div class="lab">Quotation</div><div class="num">Q-202611-001 · Ramesh Traders</div></div></div>
+ <div class="line"><div><b>TMT Steel Rod 12mm</b><small>10 kg × ₹58.00 · HSN 7213</small></div><b>₹580.00</b></div>
+ <div class="tot"><span>Subtotal</span><span>₹580.00</span></div>
+ <div class="dl">↓ Download PDF</div>
+</div>
+<div class="tag">DIRECTION C · NIGHT SHIFT</div>
+</body></html>
