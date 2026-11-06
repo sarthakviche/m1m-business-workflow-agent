@@ -117,7 +117,7 @@ async def create_quotation(
         session.add(q_line)
 
     # 5. Generate PDF
-    pdf_url = generate_quotation_pdf(tenant, customer, quotation, line_records)
+    pdf_url = await generate_quotation_pdf(session, tenant, customer, quotation, line_records)
     quotation.pdf_url = pdf_url
 
     await session.flush()

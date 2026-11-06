@@ -4,8 +4,8 @@ Tenant model — root of the multi-tenant hierarchy.
 Every other tenant-scoped table (customer, item, stock, etc.)
 references tenant.id via a foreign key.
 
-Sprint 1 note: Only one test tenant is seeded. RLS (Row-Level Security)
-policies are intentionally deferred to Sprint 2+ — see README for details.
+A tenant is created when a new user signs up and sets up their business.
+RLS policies are planned as a second line of defence (docs/IMPLEMENTATION_PLAN.md).
 """
 
 import uuid
@@ -34,6 +34,8 @@ class Tenant(Base):
     state: Mapped[str] = mapped_column(Text, nullable=False)
     address: Mapped[str | None] = mapped_column(Text, nullable=True)
     logo_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Set when the owner finishes or skips first-run setup.
+    onboarded_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True),
         server_default=func.current_timestamp(),

@@ -21,8 +21,8 @@ from fastapi import APIRouter, BackgroundTasks, Body, Depends, Header, HTTPExcep
 from pydantic import BaseModel, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.chat import get_db_session
 from app.auth.dependencies import get_request_context
+from app.db.session import get_db_session
 from app.channels.linking import create_link_code
 from app.channels.telegram.client import TelegramClient
 from app.channels.telegram.handler import TelegramUpdateHandler
@@ -94,6 +94,7 @@ async def create_telegram_link_code(
 ) -> LinkCodeResponse:
     ttl = timedelta(minutes=get_settings().telegram_link_code_ttl_minutes)
     issued = await create_link_code(session, context.business_id, "telegram", ttl)
+    await session.commit()
     return LinkCodeResponse(
         code=issued.code,
         expires_at=issued.expires_at,

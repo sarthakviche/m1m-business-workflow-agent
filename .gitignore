@@ -1,7 +1,15 @@
 # ─── Secrets (NEVER commit) ──────────────────────────────────────────────────
 .env
+.env.*
+!.env.example
 *.pem
 *.key
+
+# ─── Local databases (contain customer data) ─────────────────────────────────
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
 
 # ─── Python ──────────────────────────────────────────────────────────────────
 __pycache__/
@@ -60,3 +68,6 @@ backend/generated_docs/
 node_modules/
 frontend/dist/
 frontend/.next/
+
+# Landing page deploy link
+landing/site/.vercel/

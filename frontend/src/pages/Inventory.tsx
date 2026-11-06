@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { api } from '../api/client'
-import { IconBox } from '../components/icons'
-import { Badge, Card, EmptyState, ErrorState, Page, PageHeader, SearchInput, SkeletonRows, Tabs } from '../components/ui'
+import { IconBox, IconUpload } from '../components/icons'
+import { Badge, ButtonLink, Card, EmptyState, ErrorState, Page, PageHeader, SearchInput, SkeletonRows, Tabs } from '../components/ui'
 import { useAsync } from '../hooks/useAsync'
 import { formatINR, formatQty } from '../lib/format'
 
@@ -23,7 +23,8 @@ export default function Inventory() {
 
   return (
     <Page>
-      <PageHeader title="Stock" description="Your catalog with selling price, GST rate and units in stock. Invoices reduce stock automatically." />
+      <PageHeader title="Stock" description="Your catalog with selling price, GST rate and units in stock. Invoices reduce stock automatically."
+        actions={<ButtonLink to="/inventory/import"><IconUpload size={18} /> Import price list</ButtonLink>} />
 
       <Card>
         <div className="flex flex-col gap-3 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -37,7 +38,9 @@ export default function Inventory() {
         {error ? <ErrorState message={error} onRetry={reload} />
           : loading ? <SkeletonRows />
           : items.length === 0 ? (
-            <EmptyState icon={<IconBox />} title="Your catalog is empty" description="Add items to your catalog to start quoting and billing." />
+            <EmptyState icon={<IconBox />} title="Your catalog is empty"
+              description="Snap a photo of your rate list and Munim adds every item, price and GST rate for you to check."
+              action={<ButtonLink to="/inventory/import"><IconUpload size={18} /> Import price list</ButtonLink>} />
           ) : visible.length === 0 ? (
             <EmptyState icon={<IconBox />} title={filter === 'low' ? 'Nothing is running low' : 'No matches'}
               description={filter === 'low' ? 'Every item has more than 10 units in stock.' : 'No item matches that search.'} />

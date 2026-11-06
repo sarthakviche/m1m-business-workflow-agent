@@ -95,18 +95,36 @@ async def session_factory(tmp_path, monkeypatch):
 
 
 class FakeTelegramClient:
-    def __init__(self, reject_html: bool = False):
+    def __init__(self, reject_html: bool = False, files: Dict[str, bytes] | None = None):
         self.reject_html = reject_html
         self.messages: List[Dict[str, Any]] = []
         self.documents: List[Dict[str, Any]] = []
+        self.files = files or {}
+        self.downloads: List[str] = []
+        self.answered: List[str] = []
+        self.keyboards_removed: List[int] = []
 
-    async def send_message(self, chat_id, text, *, parse_mode=None):
+    async def send_message(self, chat_id, text, *, parse_mode=None, reply_markup=None):
         if self.reject_html and parse_mode:
             raise TelegramAPIError("sendMessage", "Bad Request: can't parse entities", 400)
-        self.messages.append({"chat_id": chat_id, "text": text, "parse_mode": parse_mode})
+        sent = {"chat_id": chat_id, "text": text, "parse_mode": parse_mode}
+        if reply_markup is not None:
+            sent["reply_markup"] = reply_markup
+        self.messages.append(sent)
+        return {"message_id": len(self.messages)}
 
-    async def send_document(self, chat_id, path, *, filename=None, caption=None):
-        self.documents.append({"chat_id": chat_id, "path": path, "filename": filename, "caption": caption})
+    async def answer_callback_query(self, callback_query_id, text=None):
+        self.answered.append(callback_query_id)
+
+    async def remove_inline_keyboard(self, chat_id, message_id):
+        self.keyboards_removed.append(message_id)
+
+    async def download_file(self, file_id, *, max_bytes):
+        self.downloads.append(file_id)
+        return self.files[file_id]
+
+    async def send_document(self, chat_id, content, *, filename=None, caption=None):
+        self.documents.append({"chat_id": chat_id, "content": content, "filename": filename, "caption": caption})
 
     async def send_chat_action(self, chat_id, action="typing"):
         pass
@@ -372,9 +390,12 @@ async def test_link_then_create_quotation_with_exact_catalog_values(session_fact
     reply = client.last_text
     assert f"<b>{quotation.quotation_number}</b>" in reply
     assert "Ramesh Traders" in reply and "TMT Steel Rod 12mm" in reply and "685.00" in reply
+    async with session_factory() as session:
+        stored_pdf = await pdf_service.load_pdf(session, quotation.pdf_url, TENANT_ID)
+    assert stored_pdf.startswith(b"%PDF")
     assert client.documents == [{
         "chat_id": USER_ID,
-        "path": pdf_service.resolve_pdf_path(quotation.pdf_url, TENANT_ID),
+        "content": stored_pdf,
         "filename": f"{quotation.quotation_number}.pdf",
         "caption": quotation.quotation_number,
     }]

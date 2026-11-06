@@ -1,7 +1,7 @@
-import { documentUrl } from '../../api/client'
 import type { InvoiceData, QuotationData } from '../../types/chat'
 import { formatINR, formatQty } from '../../lib/format'
 import { IconDownload, IconFile, IconReceipt } from '../icons'
+import PdfLink from '../PdfLink'
 
 interface Props {
   documentType: 'quotation' | 'invoice'
@@ -70,10 +70,10 @@ export default function DocumentResultCard({ documentType, data, pdfUrl }: Props
       </div>
 
       {href && (
-        <a href={documentUrl(href)} target="_blank" rel="noreferrer"
-          className="flex items-center justify-center gap-2 border-t border-slate-100 px-4 py-3 text-sm font-semibold text-orange-600 transition-colors hover:bg-orange-50">
+        <PdfLink pdfUrl={href}
+          className="flex w-full items-center justify-center gap-2 border-t border-slate-100 px-4 py-3 text-sm font-semibold text-orange-600 transition-colors hover:bg-orange-50">
           <IconDownload size={18} /> Download PDF
-        </a>
+        </PdfLink>
       )}
     </div>
   )

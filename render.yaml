@@ -1,0 +1,29 @@
+# Render Blueprint for the staging API. Secrets (sync: false) are entered in the dashboard.
+# Render deploys from the branch this Blueprint is linked to.
+# The frontend is on Cloudflare Pages: see docs/DEPLOYMENT.md.
+services:
+  - type: web
+    name: munim-api-staging
+    runtime: docker
+    plan: free
+    region: singapore  # nearest to India, and to the Supabase Mumbai database
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /health
+    envVars:
+      - key: ENV
+        value: staging
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        value: https://jstfqdoefjfqfwgppmxh.supabase.co
+      - key: CORS_ORIGINS
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_WEBHOOK_SECRET
+        sync: false
+      - key: SENTRY_DSN
+        sync: false

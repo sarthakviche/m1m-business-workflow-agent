@@ -14,24 +14,13 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.session import AsyncSessionLocal
+from app.db.session import get_db_session
 from app.auth.dependencies import get_request_context
 from app.orchestrator.context import RequestContext
 from app.orchestrator.message import NormalizedMessage
 from app.orchestrator.orchestrator import get_orchestrator
 
 router = APIRouter(tags=["chat"])
-
-
-async def get_db_session():
-    """FastAPI dependency yielding an async database session with auto-commit."""
-    async with AsyncSessionLocal() as session:
-        try:
-            yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
 
 
 class ConversationMessage(BaseModel):
@@ -80,7 +69,14 @@ async def chat_endpoint(
     orchestrator = get_orchestrator()
     result = await orchestrator.process(message, context, session)
 
-    # 3. Return the standard response
+    # 3. Persist before responding, so a document that failed to save is never
+    # reported. A failed run is undone in full: no stock change, no half-made invoice.
+    if result.success:
+        await session.commit()
+    else:
+        await session.rollback()
+
+    # 4. Return the standard response
     return ChatResponse(
         response_text=result.response_text,
         intent=result.intent,
