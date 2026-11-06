@@ -1,9 +1,10 @@
-﻿"""
-M1M (Munim.ai) — Business management read API
-===============================================
-Read-only, tenant-scoped endpoints that power the web app screens.
+"""
+M1M (Munim.ai) — Business management API
+==========================================
+Tenant-scoped endpoints that power the web app screens.
 
-    GET /api/v1/business            Business profile (name, GSTIN, state)
+    GET   /api/v1/business            Business profile (name, GSTIN, state)
+    PATCH /api/v1/business            Update the profile (used by onboarding and Settings)
     GET /api/v1/dashboard/summary   Sales, dues, open quotations, low stock, recent documents
     GET /api/v1/customers           Customers with document counts and billed totals
     GET /api/v1/items               Catalog with price, GST, HSN and current stock
@@ -14,16 +15,18 @@ from query parameters.
 
 from __future__ import annotations
 
+import re
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.chat import get_db_session
 from app.auth.dependencies import get_request_context
+from app.db.session import get_db_session
 from app.errors.categories import NotFoundError
 from app.models.customer import Customer
 from app.models.invoice import Invoice
@@ -48,6 +51,7 @@ class BusinessProfile(BaseModel):
     gstin: Optional[str]
     state: str
     address: Optional[str]
+    onboarded: bool
 
 
 class LowStockItem(BaseModel):
@@ -104,8 +108,53 @@ class CatalogItem(BaseModel):
     low_stock: bool
 
 
+_GSTIN_PATTERN = r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$"
+
+
+class BusinessProfileUpdate(BaseModel):
+    """Fields left out are unchanged. An empty GSTIN or address clears it."""
+
+    business_name: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    gstin: Optional[str] = Field(default=None, max_length=15)
+    state: Optional[str] = Field(default=None, min_length=2, max_length=60)
+    address: Optional[str] = Field(default=None, max_length=500)
+
+    @field_validator("business_name", "state", "address", mode="before")
+    @classmethod
+    def _strip(cls, value):
+        return value.strip() if isinstance(value, str) else value
+
+    @field_validator("gstin", mode="before")
+    @classmethod
+    def _check_gstin(cls, value):
+        if value is None:
+            return None
+        value = str(value).strip().upper()
+        if value and not re.match(_GSTIN_PATTERN, value):
+            raise ValueError("GSTIN should look like 27ABCDE1234F1Z5")
+        return value
+
+
 def _money(value: Optional[Decimal]) -> float:
     return float(value or 0)
+
+
+def business_profile(tenant: Tenant) -> BusinessProfile:
+    return BusinessProfile(
+        id=str(tenant.id),
+        business_name=tenant.business_name,
+        gstin=tenant.gstin,
+        state=tenant.state,
+        address=tenant.address,
+        onboarded=tenant.onboarded_at is not None,
+    )
+
+
+async def _current_tenant(session: AsyncSession, context: RequestContext) -> Tenant:
+    tenant = await session.get(Tenant, context.business_id)
+    if tenant is None:
+        raise NotFoundError(detail=f"Tenant {context.business_id} not found", user_message="Business not found.")
+    return tenant
 
 
 @router.get("/business", response_model=BusinessProfile)
@@ -113,16 +162,37 @@ async def get_business(
     context: RequestContext = Depends(get_request_context),
     session: AsyncSession = Depends(get_db_session),
 ) -> BusinessProfile:
-    tenant = await session.get(Tenant, context.business_id)
-    if tenant is None:
-        raise NotFoundError(detail=f"Tenant {context.business_id} not found", user_message="Business not found.")
-    return BusinessProfile(
-        id=str(tenant.id),
-        business_name=tenant.business_name,
-        gstin=tenant.gstin,
-        state=tenant.state,
-        address=tenant.address,
-    )
+    return business_profile(await _current_tenant(session, context))
+
+
+@router.post("/business/complete-onboarding", response_model=BusinessProfile)
+async def complete_onboarding(
+    context: RequestContext = Depends(get_request_context),
+    session: AsyncSession = Depends(get_db_session),
+) -> BusinessProfile:
+    tenant = await _current_tenant(session, context)
+    if tenant.onboarded_at is None:
+        tenant.onboarded_at = datetime.now(timezone.utc)
+        await session.commit()
+    return business_profile(tenant)
+
+
+@router.patch("/business", response_model=BusinessProfile)
+async def update_business(
+    body: BusinessProfileUpdate,
+    context: RequestContext = Depends(get_request_context),
+    session: AsyncSession = Depends(get_db_session),
+) -> BusinessProfile:
+    tenant = await _current_tenant(session, context)
+    changes = body.model_dump(exclude_unset=True)
+    for attr in ("business_name", "state"):
+        if changes.get(attr):
+            setattr(tenant, attr, changes[attr])
+    for attr in ("gstin", "address"):
+        if attr in changes:
+            setattr(tenant, attr, changes[attr] or None)
+    await session.commit()
+    return business_profile(tenant)
 
 
 @router.get("/dashboard/summary", response_model=DashboardSummary)

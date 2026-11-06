@@ -12,27 +12,26 @@ Routes:
 
 from __future__ import annotations
 
-import uuid
 from pathlib import Path
 from typing import List, Optional
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_request_context
-from app.api.v1.chat import get_db_session
+from app.db.session import get_db_session
 from app.models.customer import Customer
 from app.models.invoice import Invoice
 from app.models.quotation import Quotation
 from app.orchestrator.context import RequestContext
+from app.services.pdf_service import load_pdf
 
 router = APIRouter(tags=["documents"])
 
-# Root of all generated documents (matches pdf_service.py _DOCS_DIR)
-# Resolves to: <repo>/backend/generated_docs/
+# Where PDFs lived before moving into the database (matches pdf_service.py _DOCS_DIR).
 _DOCS_ROOT = Path(__file__).resolve().parents[3] / "generated_docs"
 
 
@@ -128,38 +127,40 @@ async def list_documents(
 
 @router.get(
     "/documents/{tenant_id}/{doc_type}/{filename}",
-    response_class=FileResponse,
+    response_class=Response,
     summary="Serve a generated PDF document",
     description=(
-        "Streams a generated quotation or invoice PDF for the given tenant. "
+        "Streams a generated quotation or invoice PDF belonging to the caller's business. "
         "Only .pdf files are served; path traversal is rejected with 400."
     ),
 )
-async def serve_document(tenant_id: str, doc_type: str, filename: str) -> FileResponse:
+async def serve_document(
+    tenant_id: str,
+    doc_type: str,
+    filename: str,
+    context: RequestContext = Depends(get_request_context),
+    session: AsyncSession = Depends(get_db_session),
+) -> Response:
     """
-    Serve a generated PDF from ``generated_docs/{tenant_id}/{doc_type}/{filename}``.
+    Serve a stored PDF. Returns 404 for another business's document (never
+    confirming that it exists) and for anything missing, 400 if it isn't a PDF.
+    """
+    if tenant_id != str(context.business_id):
+        raise HTTPException(status_code=404, detail="Document not found.")
 
-    Returns 400 if the resolved path escapes the docs root or the extension is
-    not ``.pdf``.  Returns 404 if the file does not exist.
-    """
-    # Whitelist extension
     if not filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are served.")
 
-    target = (_DOCS_ROOT / tenant_id / doc_type / filename).resolve()
-
-    # Guard against path traversal
-    try:
-        target.relative_to(_DOCS_ROOT.resolve())
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid document path.")
-
-    if not target.exists() or not target.is_file():
+    content = await load_pdf(session, f"/documents/{tenant_id}/{doc_type}/{filename}", context.business_id)
+    if content is None:
         raise HTTPException(status_code=404, detail="Document not found.")
 
-    return FileResponse(
-        path=str(target),
+    return Response(
+        content=content,
         media_type="application/pdf",
-        filename=filename,
+        headers={
+            "Content-Disposition": f'inline; filename="{quote(filename)}"',
+            "Cache-Control": "private, no-store",
+        },
     )
 

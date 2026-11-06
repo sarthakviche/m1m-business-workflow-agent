@@ -88,11 +88,16 @@ async def create_direct_invoice(
     state_assumed = customer.state is None or customer.state.strip() == ""
     customer_state = customer.state if not state_assumed else tenant.state
 
-    # 1. Stock Check Phase (Fail-fast before any modification)
-    for item, qty in items_with_qty:
+    # 1. Stock Check Phase (Fail-fast before any modification). Rows stay locked
+    # until commit so simultaneous invoices can't sell the same stock twice. A fixed
+    # lock order avoids deadlocks, and populate_existing reads the value after the wait.
+    for item, qty in sorted(items_with_qty, key=lambda pair: str(pair[0].id)):
         qty_dec = Decimal(str(qty))
         stock_res = await session.execute(
-            select(Stock).where(Stock.item_id == item.id, Stock.tenant_id == tenant_id)
+            select(Stock)
+            .where(Stock.item_id == item.id, Stock.tenant_id == tenant_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
         )
         stock_row = stock_res.scalar_one_or_none()
         available = stock_row.quantity_available if stock_row else Decimal("0.00")
@@ -186,8 +191,8 @@ async def create_direct_invoice(
         if totals["cgst_amount"] > 0 or totals["sgst_amount"] > 0
         else "Inter-State (IGST)"
     )
-    pdf_url = generate_invoice_pdf(
-        tenant, customer, invoice, line_records, quotation_number=quotation_number
+    pdf_url = await generate_invoice_pdf(
+        session, tenant, customer, invoice, line_records, quotation_number=quotation_number
     )
     invoice.pdf_url = pdf_url
 
@@ -269,7 +274,8 @@ async def convert_quotation_to_invoice(
     except ValueError:
         stmt = stmt.where(Quotation.quotation_number == ident)
 
-    result = await session.execute(stmt)
+    # Locked until commit, so the same quotation can't be converted twice at once.
+    result = await session.execute(stmt.with_for_update().execution_options(populate_existing=True))
     quotation = result.scalar_one_or_none()
 
     if not quotation:

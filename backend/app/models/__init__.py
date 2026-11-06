@@ -21,8 +21,13 @@ from app.models.conversation_log import ConversationLog
 from app.models.conversation_state import ConversationStateRecord
 from app.models.channel import ChannelIdentity, ChannelLinkCode, ChannelInboundEvent
 from app.models.tally import TallyConnection, ExternalIdMap
+from app.models.document import DocumentFile, DocumentSequence
+from app.models.ai_usage import AiUsage
 
 __all__ = [
+    "DocumentFile",
+    "DocumentSequence",
+    "AiUsage",
     "Tenant",
     "AppUser",
     "Customer",

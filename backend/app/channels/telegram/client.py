@@ -27,6 +27,10 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 _DEFAULT_TIMEOUT = httpx.Timeout(30.0, connect=10.0)
 
 
+# Update types the bot subscribes to (messages and inline-button taps).
+ALLOWED_UPDATES = ["message", "callback_query"]
+
+
 class TelegramAPIError(Exception):
     """A Bot API call failed. Never carries the token or request URL."""
 
@@ -48,6 +52,7 @@ class TelegramClient:
         if not token:
             raise ValueError("Telegram bot token is required.")
         self._base = f"{base_url.rstrip('/')}/bot{token}"
+        self._file_base = f"{base_url.rstrip('/')}/file/bot{token}"
         self._http = http_client or httpx.AsyncClient(timeout=_DEFAULT_TIMEOUT)
 
     async def aclose(self) -> None:
@@ -85,34 +90,73 @@ class TelegramClient:
 
     # ── Messaging ────────────────────────────────────────────────────────────
 
-    async def send_message(self, chat_id: int, text: str, *, parse_mode: Optional[str] = None) -> Dict[str, Any]:
+    async def send_message(
+        self,
+        chat_id: int,
+        text: str,
+        *,
+        parse_mode: Optional[str] = None,
+        reply_markup: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         payload: Dict[str, Any] = {"chat_id": chat_id, "text": text, "disable_web_page_preview": True}
         if parse_mode:
             payload["parse_mode"] = parse_mode
+        if reply_markup:
+            payload["reply_markup"] = reply_markup
         return await self._call("sendMessage", json=payload)
+
+    async def answer_callback_query(self, callback_query_id: str, text: Optional[str] = None) -> None:
+        payload: Dict[str, Any] = {"callback_query_id": callback_query_id}
+        if text:
+            payload["text"] = text
+        await self._call("answerCallbackQuery", json=payload)
+
+    async def remove_inline_keyboard(self, chat_id: int, message_id: int) -> None:
+        await self._call("editMessageReplyMarkup", json={
+            "chat_id": chat_id, "message_id": message_id, "reply_markup": {"inline_keyboard": []},
+        })
 
     async def send_document(
         self,
         chat_id: int,
-        path: Path,
+        content: bytes,
         *,
-        filename: Optional[str] = None,
+        filename: str = "document.pdf",
         caption: Optional[str] = None,
     ) -> Dict[str, Any]:
         data: Dict[str, Any] = {"chat_id": str(chat_id)}
         if caption:
             data["caption"] = caption
-        with open(path, "rb") as fh:
-            files = {"document": (filename or path.name, fh.read(), "application/pdf")}
+        files = {"document": (filename, content, "application/pdf")}
         return await self._call("sendDocument", data=data, files=files, timeout=60.0)
 
     async def send_chat_action(self, chat_id: int, action: str = "typing") -> None:
         await self._call("sendChatAction", json={"chat_id": chat_id, "action": action})
 
+    # ── Files ────────────────────────────────────────────────────────────────
+
+    async def download_file(self, file_id: str, *, max_bytes: int) -> bytes:
+        """Download a file a user sent. Raises TelegramAPIError if it is missing or over max_bytes."""
+        info = await self._call("getFile", json={"file_id": file_id})
+        file_path = (info or {}).get("file_path")
+        if not file_path:
+            raise TelegramAPIError("getFile", "no file_path (file may be over 20 MB)")
+        if (info.get("file_size") or 0) > max_bytes:
+            raise TelegramAPIError("getFile", "file too large", 413)
+        try:
+            response = await self._http.get(f"{self._file_base}/{file_path}", timeout=60.0)
+        except httpx.HTTPError as exc:
+            raise TelegramAPIError("downloadFile", f"network error: {type(exc).__name__}") from None
+        if response.status_code != 200:
+            raise TelegramAPIError("downloadFile", f"HTTP {response.status_code}", response.status_code)
+        if len(response.content) > max_bytes:
+            raise TelegramAPIError("downloadFile", "file too large", 413)
+        return response.content
+
     # ── Updates / webhook management ─────────────────────────────────────────
 
     async def get_updates(self, *, offset: Optional[int] = None, timeout: int = 30) -> List[TelegramUpdate]:
-        payload: Dict[str, Any] = {"timeout": timeout, "allowed_updates": ["message"]}
+        payload: Dict[str, Any] = {"timeout": timeout, "allowed_updates": ALLOWED_UPDATES}
         if offset is not None:
             payload["offset"] = offset
         # The HTTP timeout must outlast Telegram's long-poll window.
@@ -123,7 +167,7 @@ class TelegramClient:
         return await self._call("setWebhook", json={
             "url": url,
             "secret_token": secret_token,
-            "allowed_updates": ["message"],
+            "allowed_updates": ALLOWED_UPDATES,
             "drop_pending_updates": drop_pending_updates,
         })
 

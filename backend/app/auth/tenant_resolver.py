@@ -40,7 +40,7 @@ class TenantResolver:
         - Missing/invalid key → AuthenticationError
     """
 
-    def __init__(self, key_map: Dict[str, uuid.UUID], dev_tenant_id: uuid.UUID, is_dev: bool):
+    def __init__(self, key_map: Dict[str, uuid.UUID], dev_tenant_id: uuid.UUID | None, is_dev: bool):
         self._key_map = key_map
         self._dev_tenant_id = dev_tenant_id
         self._is_dev = is_dev
@@ -71,19 +71,19 @@ class TenantResolver:
                 return resolved
             # Key provided but not recognized
             raise AuthenticationError(
-                detail=f"Unrecognized API key: {api_key[:8]}...",
+                detail="Unrecognized API key.",
                 user_message="Invalid API key. Please check your credentials.",
             )
 
         # No key provided
-        if self._is_dev:
+        if self._is_dev and self._dev_tenant_id is not None:
             # Development fallback — allows running without auth during local dev
             return self._dev_tenant_id
 
         # Production: reject unauthenticated requests
         raise AuthenticationError(
             detail="No API key provided and not in development mode.",
-            user_message="Authentication required. Please provide an X-API-Key header.",
+            user_message="Please sign in to continue.",
         )
 
 
@@ -98,19 +98,20 @@ def get_tenant_resolver() -> TenantResolver:
     If MUNIM_API_KEYS is not set, only dev fallback is available.
     """
     settings = get_settings()
-    is_dev = settings.env == "development"
-    dev_tenant_id = uuid.UUID(settings.effective_sprint_tenant_id)
+    is_dev = settings.is_development
+    # The demo tenant only ever exists in development.
+    dev_tenant_id = uuid.UUID(settings.effective_sprint_tenant_id) if is_dev else None
 
     # Load API key → tenant_id map from settings
     key_map: Dict[str, uuid.UUID] = {}
-    raw_keys = getattr(settings, "munim_api_keys", None)
+    raw_keys = settings.munim_api_keys
     if raw_keys:
         import json
         try:
-            parsed = json.loads(raw_keys) if isinstance(raw_keys, str) else raw_keys
-            for k, v in parsed.items():
+            for k, v in json.loads(raw_keys).items():
                 key_map[k] = uuid.UUID(v)
-        except Exception:
-            pass  # malformed key map — log and continue without it
+        except (ValueError, AttributeError) as exc:
+            # Say what's wrong without echoing the secret values.
+            raise ValueError("MUNIM_API_KEYS must be a JSON map of API key to tenant UUID") from exc
 
     return TenantResolver(key_map=key_map, dev_tenant_id=dev_tenant_id, is_dev=is_dev)

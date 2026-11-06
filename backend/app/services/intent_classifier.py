@@ -21,11 +21,14 @@ Entities extracted:
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 from app.services.gemini import DEFAULT_MODEL, get_gemini_client
+
+logger = logging.getLogger(__name__)
 
 
 class ExtractedLineItem(BaseModel):
@@ -394,8 +397,14 @@ def classify_intent_sync(raw_message: str, conversation_context: str = "") -> In
 
         return result
 
-    except Exception:
-        res = _extract_via_regex(msg, conversation_context)
-        if res.customer_name and re.match(r"^\d", res.customer_name.strip()):
-            res.customer_name = None
-        return res
+    except Exception as exc:
+        logger.warning("intent.gemini_failed_using_rules", extra={"error": type(exc).__name__})
+        return classify_with_rules(msg, conversation_context)
+
+
+def classify_with_rules(raw_message: str, conversation_context: str = "") -> IntentClassificationResult:
+    """The rule-based parser: no AI call, used when AI is failing or over its daily limit."""
+    res = _extract_via_regex((raw_message or "").strip(), conversation_context)
+    if res.customer_name and re.match(r"^\d", res.customer_name.strip()):
+        res.customer_name = None
+    return res

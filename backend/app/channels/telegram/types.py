@@ -34,17 +34,45 @@ class TelegramChat(_TelegramModel):
     type: str  # 'private' | 'group' | 'supergroup' | 'channel'
 
 
+class TelegramPhotoSize(_TelegramModel):
+    file_id: str
+    width: int = 0
+    height: int = 0
+    file_size: Optional[int] = None
+
+
+class TelegramDocument(_TelegramModel):
+    file_id: str
+    file_name: Optional[str] = None
+    mime_type: Optional[str] = None
+    file_size: Optional[int] = None
+
+
 class TelegramMessage(_TelegramModel):
     message_id: int
     date: int
     chat: TelegramChat
     from_user: Optional[TelegramUser] = Field(default=None, alias="from")
     text: Optional[str] = None
+    caption: Optional[str] = None
+    # Telegram sends one photo at several resolutions, smallest first.
+    photo: List[TelegramPhotoSize] = Field(default_factory=list)
+    document: Optional[TelegramDocument] = None
+
+
+class TelegramCallbackQuery(_TelegramModel):
+    """A tap on an inline keyboard button."""
+
+    id: str
+    from_user: TelegramUser = Field(alias="from")
+    message: Optional[TelegramMessage] = None
+    data: Optional[str] = None
 
 
 class TelegramUpdate(_TelegramModel):
     update_id: int
     message: Optional[TelegramMessage] = None
+    callback_query: Optional[TelegramCallbackQuery] = None
 
 
 class BotCommand(_TelegramModel):

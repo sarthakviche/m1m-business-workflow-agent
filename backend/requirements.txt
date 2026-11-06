@@ -1,5 +1,6 @@
 # ─── Web framework ───────────────────────────────────────────────────────────
 fastapi>=0.115.0
+python-multipart>=0.0.20  # file uploads (price-list import)
 uvicorn[standard]>=0.30.0
 
 # ─── Database / ORM ──────────────────────────────────────────────────────────
@@ -17,12 +18,14 @@ pydantic>=2.0.0
 pydantic-settings>=2.0.0
 python-dotenv>=1.0.0
 
+# ─── Auth (verifying login tokens) ───────────────────────────────────────────
+pyjwt[crypto]>=2.9.0
+
+# ─── Error tracking (on only when SENTRY_DSN is set) ─────────────────────────
+sentry-sdk>=2.0.0
+
 # ─── HTTP client (Telegram Bot API) ──────────────────────────────────────────
 httpx>=0.27.0
-
-# ─── Testing ─────────────────────────────────────────────────────────────────
-pytest>=8.0.0
-pytest-asyncio>=0.23.0
 
 # ─── Agent Orchestration & Templates (Sprint 1 Step 4) ────────────────────────
 langgraph>=0.2.0

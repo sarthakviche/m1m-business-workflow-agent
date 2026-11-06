@@ -65,9 +65,20 @@ def _client() -> TelegramClient:
 
 async def poll() -> None:
     client = _client()
-    me = await client.get_me()
-    await client.delete_webhook(drop_pending_updates=False)
-    await client.set_my_commands(BOT_COMMANDS)
+    # Telegram returns transient 5xx/network errors now and then; don't die on startup.
+    backoff = 1
+    while True:
+        try:
+            me = await client.get_me()
+            await client.delete_webhook(drop_pending_updates=False)
+            await client.set_my_commands(BOT_COMMANDS)
+            break
+        except TelegramAPIError as exc:
+            if exc.error_code is not None and exc.error_code < 500 and exc.error_code != 429:
+                raise
+            logger.warning("startup failed: %s (retrying in %ss)", exc.description, backoff)
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, 30)
     handler = TelegramUpdateHandler(client, AsyncSessionLocal)
     print(f"Polling as @{me.get('username')} — press Ctrl+C to stop.", flush=True)
 

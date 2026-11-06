@@ -74,6 +74,14 @@ class AuthorizationError(MunimError):
         super().__init__(detail, user_message)
 
 
+class BusinessRequiredError(AuthorizationError):
+    """A signed-in user who hasn't created their business yet."""
+    code = "business_required"
+
+    def __init__(self, detail: str = ""):
+        super().__init__(detail, user_message="Please set up your business first.")
+
+
 class AuthenticationError(MunimError):
     """No valid credentials provided."""
     code = "authentication_error"
