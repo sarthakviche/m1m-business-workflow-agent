@@ -20,6 +20,7 @@ class LineItemInput(BaseModel):
 
 class CreateQuotationInput(BaseModel):
     customer_name: str = Field(..., description="Name of the customer")
+    new_customer: bool = Field(default=False, description="User confirmed this is a new customer, not a near-match")
     line_items: List[LineItemInput] = Field(..., description="Items to include in the quotation")
 
 
@@ -43,6 +44,7 @@ class CreateQuotationTool(BaseTool):
             line_items=[i.model_dump() for i in input_data.line_items],
             business_id=context.business_id,
             session=session,
+            new_customer=input_data.new_customer,
         )
 
         # 2. Execute deterministic business service

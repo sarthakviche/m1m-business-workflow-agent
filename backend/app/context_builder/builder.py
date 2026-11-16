@@ -18,7 +18,7 @@ from app.models.customer import Customer
 from app.models.item import Item
 from app.services.customer_lookup import lookup_customer_scored, create_customer_if_missing
 from app.services.item_lookup import lookup_item
-from app.errors.categories import InsufficientInformationError, NotFoundError
+from app.errors.categories import CustomerConfirmationNeeded, InsufficientInformationError, NotFoundError
 
 
 class ContextBuilder:
@@ -32,6 +32,7 @@ class ContextBuilder:
         line_items: list[dict],
         business_id: uuid.UUID,
         session: AsyncSession,
+        new_customer: bool = False,
     ) -> Tuple[Customer, List[Tuple[Item, Decimal]]]:
         """
         Loads the customer and items required for a quotation or invoice.
@@ -43,15 +44,15 @@ class ContextBuilder:
         """
         resolved_items = await self._resolve_items(line_items, business_id, session)
 
-        # 1. Resolve customer
+        # 1. Resolve customer. new_customer means the user already answered
+        # "Did you mean X?" with "new", so a near-match must not ask again.
+        if new_customer:
+            return await create_customer_if_missing(session, business_id, customer_name), resolved_items
         match_result = await lookup_customer_scored(session, business_id, customer_name)
         if match_result.match_type in ("exact", "fuzzy_high"):
             customer = match_result.customer
         elif match_result.match_type == "fuzzy_medium":
-            raise InsufficientInformationError(
-                detail=f"Fuzzy match pending for {customer_name}",
-                user_message=f"Did you mean **{match_result.customer.name}**? Or is this a new customer?"
-            )
+            raise CustomerConfirmationNeeded(customer_name.strip(), match_result.customer.name)
         else:
             customer = await create_customer_if_missing(session, business_id, customer_name)
 

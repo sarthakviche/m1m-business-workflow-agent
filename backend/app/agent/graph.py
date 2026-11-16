@@ -62,6 +62,71 @@ async def _get_session(config: RunnableConfig) -> AsyncIterator[AsyncSession]:
             await sess.commit()
 
 
+def emit_progress(config: RunnableConfig, stage: str) -> None:
+    """Tell a listening client what the agent is doing now (no-op when nobody listens)."""
+    callback = ((config or {}).get("configurable") or {}).get("on_progress")
+    if callback is not None:
+        try:
+            callback(stage)
+        except Exception:  # progress is cosmetic; it must never break a turn
+            pass
+
+
+_NEW_CUSTOMER_REPLY = re.compile(r"\b(new|naya|nayi|naye|different|another|alag|no|nahi|nahin|nope)\b", re.IGNORECASE)
+_SAME_CUSTOMER_REPLY = re.compile(r"\b(yes|haan|han|ha|yep|yeah|yup|correct|right|same|sahi|wahi|ok|okay|sure)\b", re.IGNORECASE)
+
+
+_ACKNOWLEDGEMENT = re.compile(
+    r"^\s*(yes|yeah|yep|ok|okay|k|haan|han|thanks|thank you|thx|ty|done|great|cool|nice|perfect|good|theek hai|thik hai|shukriya|dhanyavad)[\s.!👍🙏]*$",
+    re.IGNORECASE,
+)
+
+
+def _norm(text: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", (text or "").lower())
+
+
+def _answer_customer_confirmation(conv_state, raw_message: str):
+    """
+    Resolve a reply to "Did you mean X? Or is Y a new customer?" without an AI call.
+
+    Returns the graph update to continue the pending document, or None when the
+    reply is not an answer (the user changed the subject), so normal
+    classification takes over.
+    """
+    suggested = conv_state.extracted_entities.get("suggested_customer")
+    if conv_state.clarification_state != "confirm_customer" or not suggested or not conv_state.pending_intent:
+        return None
+    entities = dict(conv_state.extracted_entities)
+    if _NEW_CUSTOMER_REPLY.search(raw_message):
+        entities["new_customer"] = True
+    elif _SAME_CUSTOMER_REPLY.search(raw_message) or _norm(suggested) in _norm(raw_message):
+        entities["customer_name"] = suggested
+        entities["new_customer"] = False
+    else:
+        return None
+    entities.pop("suggested_customer", None)
+    return {
+        "detected_intent": conv_state.pending_intent,
+        "extracted_entities": entities,
+        "missing_fields": [],
+        "confidence": 1.0,
+        "response_text": "",
+    }
+
+
+async def _ask_customer_confirmation(context, entities: Dict[str, Any], intent: str, err, session: AsyncSession) -> None:
+    """Remember the half-made document so the user's "yes" / "new" can finish it."""
+    from app.conversation.store import conversation_store
+    from app.conversation.state import ConversationState
+
+    state = ConversationState(conversation_id=context.conversation_id, business_id=context.business_id)
+    state.pending_intent = intent
+    state.clarification_state = "confirm_customer"
+    state.extracted_entities = {**entities, "customer_name": err.requested_name, "suggested_customer": err.suggested_name}
+    await conversation_store.save(state, session)
+
+
 async def classify_intent_node(state: AgentState, config: RunnableConfig) -> Dict[str, Any]:
     """Node: Classifies user message intent and extracts structured entities with conversation context."""
     from app.conversation.store import conversation_store
@@ -79,6 +144,27 @@ async def classify_intent_node(state: AgentState, config: RunnableConfig) -> Dic
                 conversation_id=context.conversation_id,
                 business_id=context.business_id
             )
+
+        # A reply to "Did you mean X?" is answered by rules: instant, and the
+        # model can't lose the pending document along the way.
+        confirmed = _answer_customer_confirmation(conv_state, raw_message)
+        if confirmed is not None:
+            await conversation_store.clear(context.conversation_id, session)
+            return confirmed
+        conv_state.clarification_state = None
+
+        # "ok" / "yes" / "thanks" with nothing pending is an acknowledgement.
+        # Sent to the model with the history, it can re-create the last document.
+        if not conv_state.pending_intent and _ACKNOWLEDGEMENT.match(raw_message or ""):
+            return {
+                "detected_intent": "clarify",
+                "extracted_entities": {},
+                "missing_fields": [],
+                "confidence": 1.0,
+                "response_text": "You're welcome! What would you like to do next? I can make a quotation, an invoice, or check prices and stock.",
+            }
+
+        emit_progress(config, "understanding")
 
         # 2. Extract new entities. The Gemini SDK call is blocking, so run it off
         # the event loop to keep other chats responsive. Over the daily AI limit,
@@ -244,17 +330,19 @@ def route_by_intent(state: AgentState) -> str:
 async def quotation_agent_node(state: AgentState, config: RunnableConfig) -> Dict[str, Any]:
     """Node: Handles Quotation creation via ToolRegistry."""
     from app.tools.registry import registry
-    from app.errors.categories import InsufficientInformationError, MunimError
-    
+    from app.errors.categories import CustomerConfirmationNeeded, InsufficientInformationError, MunimError
+
     context = config["configurable"]["request_context"]
     entities = state.get("extracted_entities", {})
     
     tool = registry.get("create_quotation")
     args = {
         "customer_name": entities.get("customer_name") or "",
-        "line_items": entities.get("line_items") or []
+        "line_items": entities.get("line_items") or [],
+        "new_customer": bool(entities.get("new_customer")),
     }
-    
+    emit_progress(config, "drafting_quotation")
+
     async with _get_session(config) as session:
         try:
             result = await tool.invoke(args, context, session)
@@ -272,14 +360,11 @@ async def quotation_agent_node(state: AgentState, config: RunnableConfig) -> Dic
                 "response_attachments": [{"type": "pdf", "url": data["pdf_url"]}],
                 "data": data,
             }
+        except CustomerConfirmationNeeded as err:
+            await _ask_customer_confirmation(context, entities, "quotation", err, session)
+            return {"response_text": err.user_message, "document_type": None, "requires_confirmation": True, "customer_match_pending": True}
         except InsufficientInformationError as err:
-            is_fuzzy = "fuzzy" in err.detail.lower()
-            return {
-                "response_text": err.user_message,
-                "document_type": None,
-                "requires_confirmation": is_fuzzy,
-                "customer_match_pending": is_fuzzy,
-            }
+            return {"response_text": err.user_message, "document_type": None}
         except MunimError as err:
             return {"response_text": err.user_message, "document_type": None}
 
@@ -287,8 +372,8 @@ async def quotation_agent_node(state: AgentState, config: RunnableConfig) -> Dic
 async def invoice_agent_node(state: AgentState, config: RunnableConfig) -> Dict[str, Any]:
     """Node: Handles Tax Invoice creation via ToolRegistry."""
     from app.tools.registry import registry
-    from app.errors.categories import InsufficientInformationError, MunimError
-    
+    from app.errors.categories import CustomerConfirmationNeeded, InsufficientInformationError, MunimError
+
     context = config["configurable"]["request_context"]
     entities = state.get("extracted_entities", {})
     
@@ -297,13 +382,16 @@ async def invoice_agent_node(state: AgentState, config: RunnableConfig) -> Dict[
             if entities.get("is_quotation_conversion"):
                 tool = registry.get("convert_quotation")
                 args = {"quotation_number": entities.get("quotation_number") or ""}
+                emit_progress(config, "converting_quotation")
             else:
                 tool = registry.get("create_invoice")
                 args = {
                     "customer_name": entities.get("customer_name") or "",
-                    "line_items": entities.get("line_items") or []
+                    "line_items": entities.get("line_items") or [],
+                    "new_customer": bool(entities.get("new_customer")),
                 }
-            
+                emit_progress(config, "drafting_invoice")
+
             result = await tool.invoke(args, context, session)
             data = result.data
 
@@ -319,8 +407,11 @@ async def invoice_agent_node(state: AgentState, config: RunnableConfig) -> Dict[
                 "response_attachments": [{"type": "pdf", "url": data["pdf_url"]}],
                 "data": data,
             }
+        except CustomerConfirmationNeeded as err:
+            await _ask_customer_confirmation(context, entities, "invoice", err, session)
+            return {"response_text": err.user_message, "document_type": None, "requires_confirmation": True, "customer_match_pending": True}
         except InsufficientInformationError as err:
-            return {"response_text": err.user_message, "document_type": None, "requires_confirmation": "fuzzy" in err.detail.lower()}
+            return {"response_text": err.user_message, "document_type": None}
         except MunimError as err:
             return {"response_text": err.user_message, "document_type": None}
 
@@ -335,6 +426,7 @@ async def catalog_agent_node(state: AgentState, config: RunnableConfig) -> Dict[
     
     tool = registry.get("search_products")
     args = {"item_name": item_query}
+    emit_progress(config, "searching_catalog")
     
     async with _get_session(config) as session:
         try:

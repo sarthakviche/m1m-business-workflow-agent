@@ -26,7 +26,7 @@ import re
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
-from app.services.gemini import DEFAULT_MODEL, get_gemini_client
+from app.services.gemini import DEFAULT_MODEL, get_gemini_client, request_options
 
 logger = logging.getLogger(__name__)
 
@@ -203,7 +203,19 @@ def _extract_via_regex(msg: str, conversation_context: str = "") -> IntentClassi
             # Treat the message as the item list. A bare item name keeps
             # quantity=None so the agent asks for it; numbers inside a spec
             # ("12mm") are not read as quantities.
-            items = _rescue_line_items(msg) or [ExtractedLineItem(item_name=msg.strip(), quantity=None)]
+            items = _rescue_line_items(msg)
+            if not items and not _looks_like_sentence(msg):
+                # A bare item name: keep it, the agent asks for the quantity.
+                items = [ExtractedLineItem(item_name=msg.strip(), quantity=None)]
+            if not items:
+                # A sentence, not an item (e.g. "this is a new customer"): ask
+                # again rather than turning it into a line item.
+                return IntentClassificationResult(
+                    intent="clarify",
+                    confidence=0.5,
+                    customer_name=cust_name,
+                    clarification_question=f"Which items and quantities should be included for **{cust_name}**?",
+                )
             return IntentClassificationResult(
                 intent="quotation",
                 confidence=0.8,
@@ -219,6 +231,14 @@ def _extract_via_regex(msg: str, conversation_context: str = "") -> IntentClassi
         )
 
     intent_type = "quotation" if is_quote else "invoice"
+
+    # "invoice for <customer>: 20 MS hex bolts" / "... for <customer> - 10 rods, 5 nuts"
+    colon = re.search(r"(?:for|to)\s+([^:\-\n]+?)\s*[:\-]\s*(.+)$", msg, re.IGNORECASE)
+    if colon:
+        items = _rescue_line_items(colon.group(2).rstrip(". "))
+        c_name = colon.group(1).strip()
+        if items and not re.match(r"^\d", c_name):
+            return IntentClassificationResult(intent=intent_type, confidence=0.9, customer_name=c_name, line_items=items)
 
     # Split by " for " or " to " to isolate customer vs items
     # e.g. "create a quotation for ramesh traders for TMT Steet rod 12mm 2 kg"
@@ -273,6 +293,17 @@ def _extract_via_regex(msg: str, conversation_context: str = "") -> IntentClassi
         customer_name=c_name,
         line_items=[],
     )
+
+
+_SENTENCE_WORDS = {
+    "this", "that", "is", "are", "it", "its", "i", "we", "you", "customer", "new", "the",
+    "please", "what", "which", "why", "how", "yes", "no", "not", "hai", "nahi", "kya", "mean",
+}
+
+
+def _looks_like_sentence(msg: str) -> bool:
+    """True for conversational replies; product names don't use these words."""
+    return any(word in _SENTENCE_WORDS for word in re.findall(r"[a-z]+", msg.lower()))
 
 
 def _rescue_line_items(msg: str) -> List[ExtractedLineItem]:
@@ -342,7 +373,8 @@ def classify_intent_sync(raw_message: str, conversation_context: str = "") -> In
             config=genai.types.GenerateContentConfig(
                 response_mime_type="application/json",
                 response_schema=IntentClassificationResult,
-                temperature=0.1
+                temperature=0.1,
+                http_options=request_options(),
             ),
         )
         resp_text = (response.text or "").strip()
@@ -398,7 +430,7 @@ def classify_intent_sync(raw_message: str, conversation_context: str = "") -> In
         return result
 
     except Exception as exc:
-        logger.warning("intent.gemini_failed_using_rules", extra={"error": type(exc).__name__})
+        logger.warning("intent.gemini_failed_using_rules", extra={"error": type(exc).__name__, "detail": str(exc)[:200]})
         return classify_with_rules(msg, conversation_context)
 
 

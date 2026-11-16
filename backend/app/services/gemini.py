@@ -21,18 +21,36 @@ Security rules (non-negotiable):
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from typing import Optional
 
 from google import genai
+from google.genai import types
 
 from app.config import get_settings
 
 # ─── Default model ────────────────────────────────────────────────────────────
-# gemini-3.6-flash: verified working for this API key (2026-08-16).
-# gemini-flash-latest → 503 UNAVAILABLE; gemini-2.5-flash → 404 NOT_FOUND.
-# Update this constant when a newer stable model is confirmed available.
-DEFAULT_MODEL = "gemini-3.6-flash"
+# Intent extraction is a small structured-output task, so the fast "lite" tier
+# is the right fit. Measured 2026-11-16 on the classification prompt:
+#   gemini-flash-lite-latest  ~1.2s, correct output
+#   gemini-3.6-flash          504 DEADLINE_EXCEEDED after ~19s (every attempt)
+# Override with GEMINI_MODEL without a code change if a model degrades.
+DEFAULT_MODEL = os.environ.get("GEMINI_MODEL", "gemini-flash-lite-latest")
+
+# Hard ceiling for one AI call. Past this the rule-based parser answers instead,
+# so a slow or overloaded model can never stall a chat turn. The SDK's own
+# retries are disabled: a retry after a timeout only doubles the wait.
+# The API rejects deadlines under 10s.
+GEMINI_TIMEOUT_S = max(10.0, float(os.environ.get("GEMINI_TIMEOUT_S", "10")))
+
+
+def request_options() -> types.HttpOptions:
+    """HTTP options for every Gemini call: bounded timeout, no hidden retries."""
+    return types.HttpOptions(
+        timeout=int(GEMINI_TIMEOUT_S * 1000),
+        retry_options=types.HttpRetryOptions(attempts=1),
+    )
 
 
 class GeminiKeyMissingError(RuntimeError):
@@ -90,5 +108,7 @@ def generate_text(
         If the Gemini API returns an error (propagated as-is).
     """
     client = get_gemini_client()
-    response = client.models.generate_content(model=model, contents=prompt)
+    response = client.models.generate_content(
+        model=model, contents=prompt, config=types.GenerateContentConfig(http_options=request_options())
+    )
     return response.text.strip()

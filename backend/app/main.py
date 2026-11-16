@@ -6,7 +6,7 @@ M1M (Munim.ai) — FastAPI Application Entry Point
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
@@ -16,6 +16,7 @@ from sqlalchemy import text
 import app.models  # noqa: F401
 
 from app.api.v1.router import api_v1_router
+from app.auth.dependencies import get_request_context
 from app.api.v1.documents import router as documents_router
 from app.channels.telegram.router import close_telegram_handler
 from app.config import get_settings
@@ -102,3 +103,47 @@ async def readiness_check() -> JSONResponse:
         logger.exception("system.database_unavailable")
         return JSONResponse(status_code=503, content={"status": "unavailable"})
     return JSONResponse(content={"status": "ok"})
+
+
+@app.get("/health/agent", tags=["system"], dependencies=[Depends(get_request_context)])
+async def agent_health_check() -> JSONResponse:
+    """
+    Deep check for the chat agent, for use before a demo: database, the AI model
+    (with real latency) and the parser on a known sentence. Makes one AI call,
+    so it needs the same login as the API.
+    """
+    import asyncio
+    import time
+
+    from app.services.gemini import DEFAULT_MODEL, GEMINI_TIMEOUT_S
+    from app.services.intent_classifier import classify_intent_sync
+
+    checks: dict = {}
+
+    started = time.perf_counter()
+    try:
+        async with AsyncSessionLocal() as session:
+            await session.execute(text("SELECT 1"))
+        checks["database"] = {"ok": True, "ms": int((time.perf_counter() - started) * 1000)}
+    except Exception as exc:
+        checks["database"] = {"ok": False, "error": type(exc).__name__}
+
+    # classify_intent_sync falls back to rules on any AI failure, so the model is
+    # judged on the rule-free answer: a correct customer AND item list.
+    started = time.perf_counter()
+    try:
+        res = await asyncio.to_thread(classify_intent_sync, "Create invoice for Demo Health Check: 7 MS Hex Bolt")
+        ms = int((time.perf_counter() - started) * 1000)
+        parsed = res.intent == "invoice" and bool(res.line_items) and (res.line_items[0].quantity == 7)
+        checks["ai_model"] = {
+            "ok": parsed and ms < GEMINI_TIMEOUT_S * 1000,
+            "model": DEFAULT_MODEL,
+            "ms": ms,
+            "slow": ms > 5000,
+            "parsed_correctly": parsed,
+        }
+    except Exception as exc:
+        checks["ai_model"] = {"ok": False, "model": DEFAULT_MODEL, "error": type(exc).__name__}
+
+    healthy = all(c.get("ok") for c in checks.values())
+    return JSONResponse(status_code=200 if healthy else 503, content={"status": "ok" if healthy else "degraded", "checks": checks})
