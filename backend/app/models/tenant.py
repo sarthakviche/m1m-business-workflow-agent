@@ -34,6 +34,7 @@ class Tenant(Base):
     state: Mapped[str] = mapped_column(Text, nullable=False)
     address: Mapped[str | None] = mapped_column(Text, nullable=True)
     logo_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    brand_color: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Set when the owner finishes or skips first-run setup.
     onboarded_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { api } from '../api/client'
 import type { TelegramLinkCode } from '../api/client'
@@ -120,6 +120,102 @@ function AccountCard() {
   )
 }
 
+function BrandingCard() {
+  const [brandColor, setBrandColor] = useState('#ea580c')
+  const [logoUrl, setLogoUrl] = useState<string | null>(null)
+  const [savingColor, setSavingColor] = useState(false)
+  const [uploadingLogo, setUploadingLogo] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+
+  useEffect(() => {
+    let currentUrl: string | null = null
+    void (async () => {
+      try {
+        const branding = await api.businessBranding()
+        setBrandColor(branding.brand_color ?? '#ea580c')
+        if (branding.logo_url) {
+          currentUrl = URL.createObjectURL(await api.businessLogo())
+          setLogoUrl(currentUrl)
+        }
+      } catch {
+        // Branding is optional; the normal business settings remain usable.
+      }
+    })()
+    return () => { if (currentUrl) URL.revokeObjectURL(currentUrl) }
+  }, [])
+
+  async function saveColor() {
+    setSavingColor(true)
+    setError(null)
+    setNotice(null)
+    try {
+      const result = await api.updateBusinessBranding(brandColor)
+      setBrandColor(result.brand_color ?? '#ea580c')
+      setNotice('Brand colour saved.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save your brand colour.')
+    } finally {
+      setSavingColor(false)
+    }
+  }
+
+  async function uploadLogo(file: File | undefined) {
+    if (!file) return
+    setUploadingLogo(true)
+    setError(null)
+    setNotice(null)
+    try {
+      await api.uploadBusinessLogo(file)
+      const nextUrl = URL.createObjectURL(await api.businessLogo())
+      setLogoUrl((oldUrl) => {
+        if (oldUrl) URL.revokeObjectURL(oldUrl)
+        return nextUrl
+      })
+      setNotice('Logo saved. It will appear on new quotations and invoices.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not upload your logo.')
+    } finally {
+      setUploadingLogo(false)
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader title="Document branding" />
+      <div className="flex flex-col gap-5 p-5">
+        <div className="flex items-center gap-4">
+          {logoUrl ? (
+            <img src={logoUrl} alt="Business logo" className="h-14 w-14 rounded-xl border border-slate-200 object-contain p-1" />
+          ) : (
+            <span className="flex h-14 w-14 items-center justify-center rounded-xl bg-slate-100 text-xs font-semibold text-slate-500">Logo</span>
+          )}
+          <div className="min-w-0">
+            <label htmlFor="business-logo" className="text-sm font-medium text-slate-700">Business logo</label>
+            <p className="mt-0.5 text-xs text-slate-500">PNG or JPEG, up to 1 MB. It appears on new quotations and invoices.</p>
+            <input id="business-logo" type="file" accept="image/png,image/jpeg" className="mt-2 block max-w-full text-xs text-slate-600"
+              disabled={uploadingLogo} onChange={(e) => void uploadLogo(e.target.files?.[0])} />
+          </div>
+        </div>
+        <div className="border-t border-slate-100 pt-4">
+          <label htmlFor="brand-color" className="block text-sm font-medium text-slate-700">Brand accent colour</label>
+          <p className="mt-0.5 text-xs text-slate-500">Used for document headers and totals. Text colour adapts for readability.</p>
+          <div className="mt-2 flex items-center gap-3">
+            <input id="brand-color" type="color" value={brandColor} className="h-10 w-12 cursor-pointer rounded border border-slate-200 p-1"
+              onChange={(e) => setBrandColor(e.target.value)} />
+            <code className="rounded-lg bg-slate-100 px-2 py-1.5 text-sm text-slate-700">{brandColor.toUpperCase()}</code>
+            <Button variant="secondary" className="ml-auto" onClick={() => void saveColor()} disabled={savingColor}>
+              {savingColor ? 'Saving…' : 'Save colour'}
+            </Button>
+          </div>
+        </div>
+        {error && <p role="alert" className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
+        {notice && <p role="status" className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{notice}</p>}
+      </div>
+    </Card>
+  )
+}
+
 function TelegramConnect() {
   const [link, setLink] = useState<TelegramLinkCode | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -194,6 +290,7 @@ export default function Settings() {
       <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
         <BusinessProfileCard />
         <div className="flex flex-col gap-6">
+          <BrandingCard />
           <TelegramConnect />
           {supabase && <AccountCard />}
         </div>

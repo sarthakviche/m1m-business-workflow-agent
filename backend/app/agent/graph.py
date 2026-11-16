@@ -227,6 +227,8 @@ async def _resolve_intent(conv_state, res, raw_message: str, session: AsyncSessi
         "quotation_number": res.quotation_number,
         "is_quotation_conversion": res.is_quotation_conversion,
         "catalog_item_name": res.catalog_item_name,
+        "business_query_type": res.business_query_type,
+        "business_period": res.business_period,
     })
 
     extracted = conv_state.extracted_entities
@@ -322,6 +324,8 @@ def route_by_intent(state: AgentState) -> str:
         return "invoice_agent"
     elif intent == "catalog_query":
         return "catalog_agent"
+    elif intent == "business_query":
+        return "business_agent"
     elif intent in ("out_of_scope", "off_topic", "future_feature"):
         return "out_of_scope_agent"
     return "clarify_agent"
@@ -440,6 +444,39 @@ async def catalog_agent_node(state: AgentState, config: RunnableConfig) -> Dict[
             return {"response_text": err.user_message, "document_type": None}
 
 
+async def business_agent_node(state: AgentState, config: RunnableConfig) -> Dict[str, Any]:
+    """Handle deterministic sales, dues, stock, and customer insight queries."""
+    from app.errors.categories import MunimError
+    from app.tools.registry import registry
+
+    context = config["configurable"]["request_context"]
+    entities = state.get("extracted_entities", {})
+    query_type = entities.get("business_query_type")
+    tool_names = {
+        "sales": "sales_summary",
+        "dues": "outstanding_dues",
+        "low_stock": "low_stock",
+        "top_customers": "top_customers",
+    }
+    tool_name = tool_names.get(query_type)
+    if tool_name is None:
+        return {"response_text": "I can check sales, outstanding dues, low stock, or top customers.", "document_type": None}
+
+    args: Dict[str, Any] = {}
+    if query_type in ("sales", "top_customers"):
+        args["period"] = entities.get("business_period") or (
+            "this_week" if query_type == "sales" else "this_month"
+        )
+    emit_progress(config, "searching_catalog")
+
+    async with _get_session(config) as session:
+        try:
+            result = await registry.get(tool_name).invoke(args, context, session)
+            return {"response_text": result.data["response_text"], "document_type": None, "data": result.data}
+        except MunimError as err:
+            return {"response_text": err.user_message, "document_type": None}
+
+
 async def clarify_agent_node(state: AgentState) -> Dict[str, Any]:
     """Node: Handles clarification responses."""
     resp = state.get("response_text") or "Could you please provide more details for your quotation or invoice request?"
@@ -521,6 +558,7 @@ def create_agent_graph() -> Any:
     workflow.add_node("quotation_agent", quotation_agent_node)
     workflow.add_node("invoice_agent", invoice_agent_node)
     workflow.add_node("catalog_agent", catalog_agent_node)
+    workflow.add_node("business_agent", business_agent_node)
     workflow.add_node("clarify_agent", clarify_agent_node)
     workflow.add_node("out_of_scope_agent", out_of_scope_agent_node)
     workflow.add_node("log_conversation", log_conversation_node)
@@ -534,6 +572,7 @@ def create_agent_graph() -> Any:
             "quotation_agent": "quotation_agent",
             "invoice_agent": "invoice_agent",
             "catalog_agent": "catalog_agent",
+            "business_agent": "business_agent",
             "clarify_agent": "clarify_agent",
             "out_of_scope_agent": "out_of_scope_agent",
         },
@@ -542,6 +581,7 @@ def create_agent_graph() -> Any:
     workflow.add_edge("quotation_agent", "log_conversation")
     workflow.add_edge("invoice_agent", "log_conversation")
     workflow.add_edge("catalog_agent", "log_conversation")
+    workflow.add_edge("business_agent", "log_conversation")
     workflow.add_edge("clarify_agent", "log_conversation")
     workflow.add_edge("out_of_scope_agent", "log_conversation")
     workflow.add_edge("log_conversation", END)

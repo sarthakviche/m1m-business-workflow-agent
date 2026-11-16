@@ -23,7 +23,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, Field
 
 from app.services.gemini import DEFAULT_MODEL, get_gemini_client, request_options
@@ -63,6 +63,14 @@ class IntentClassificationResult(BaseModel):
         default=None,
         description="Name of item for price/stock/catalog queries",
     )
+    business_query_type: Optional[Literal["sales", "dues", "low_stock", "top_customers"]] = Field(
+        default=None,
+        description="One of: sales, dues, low_stock, top_customers",
+    )
+    business_period: Optional[Literal["today", "this_week", "this_month", "last_month"]] = Field(
+        default=None,
+        description="One of: today, this_week, this_month, last_month",
+    )
     clarification_question: Optional[str] = Field(
         default=None,
         description="Clarifying question if information is missing or ambiguous",
@@ -75,13 +83,15 @@ The business is an industrial supplier. Its catalog contains items like steel ro
 
 Analyze the CURRENT user message together with the conversation history, then return ONLY a valid JSON object matching this schema — no markdown, no explanation:
 {
-  "intent": "quotation" | "invoice" | "catalog_query" | "future_feature" | "off_topic" | "clarify" | "out_of_scope",
+  "intent": "quotation" | "invoice" | "catalog_query" | "business_query" | "future_feature" | "off_topic" | "clarify" | "out_of_scope",
   "confidence": float (0.0 to 1.0),
   "customer_name": string | null,
   "line_items": [{"item_name": string, "quantity": float}],
   "quotation_number": string | null,
   "is_quotation_conversion": boolean,
   "catalog_item_name": string | null,
+  "business_query_type": "sales" | "dues" | "low_stock" | "top_customers" | null,
+  "business_period": "today" | "this_week" | "this_month" | "last_month" | null,
   "clarification_question": string | null
 }
 
@@ -90,9 +100,10 @@ Analyze the CURRENT user message together with the conversation history, then re
 1. "quotation": User wants to create a quotation/estimate/price quote for a customer.
 2. "invoice": User wants to create a GST invoice, OR convert a quotation to an invoice.
 3. "catalog_query": User asks about item prices, rates, stock levels, or wants to see the catalog.
-4. "future_feature": Legitimate SME feature not yet built (dues reminders, accounting sync, salary slips, reports).
-5. "off_topic": Completely unrelated to business (jokes, code, weather, recipes, general chat).
-6. "clarify": Ambiguous request, or missing BOTH customer AND items with no prior context to resolve them.
+4. "business_query": User asks for sales, highest outstanding dues, low-stock items, or top customers. Set business_query_type and use only a listed business_period; use this_week for sales and this_month for top customers when no period is stated.
+5. "future_feature": Legitimate SME feature not yet built (dues reminders, accounting sync, salary slips, reports).
+6. "off_topic": Completely unrelated to business (jokes, code, weather, recipes, general chat).
+7. "clarify": Ambiguous request, or missing BOTH customer AND items with no prior context to resolve them.
 
 === ENTITY EXTRACTION RULES ===
 
@@ -145,12 +156,37 @@ User: "What is the price of TMT Steel Rod?"
 User: "Show all items" / "What do we have in stock?"
 -> intent=catalog_query, catalog_item_name=null
 
+User: "What were my sales this week?"
+-> intent=business_query, business_query_type=sales, business_period=this_week
+
+User: "Who owes me the most?"
+-> intent=business_query, business_query_type=dues, business_period=null
+
+User: "What is low in stock?"
+-> intent=business_query, business_query_type=low_stock, business_period=null
+
+User: "Top 3 customers this month"
+-> intent=business_query, business_query_type=top_customers, business_period=this_month
+
 User: "Tell me a joke"
 -> intent=off_topic
 
 User: "Remind my customer about dues"
 -> intent=future_feature
 """
+
+
+def _business_period(message: str) -> Optional[str]:
+    """Map supported human period phrases to a deterministic period enum."""
+    if "last month" in message:
+        return "last_month"
+    if "this month" in message:
+        return "this_month"
+    if "today" in message:
+        return "today"
+    if "this week" in message or "week" in message:
+        return "this_week"
+    return None
 
 
 def _extract_via_regex(msg: str, conversation_context: str = "") -> IntentClassificationResult:
@@ -161,6 +197,23 @@ def _extract_via_regex(msg: str, conversation_context: str = "") -> IntentClassi
     off_topic_kws = ("joke", "weather", "python", "code", "script", "poem", "story", "recipe", "game")
     if any(kw in lowered for kw in off_topic_kws):
         return IntentClassificationResult(intent="off_topic", confidence=0.9)
+
+    period = _business_period(lowered)
+    if any(word in lowered for word in ("low stock", "stock low", "running low", "low on stock", "low in stock")):
+        return IntentClassificationResult(intent="business_query", confidence=0.9, business_query_type="low_stock")
+    if (
+        any(word in lowered for word in ("top customer", "top customers", "top buyer", "top buyers"))
+        or ("top" in lowered and ("customer" in lowered or "buyer" in lowered))
+    ):
+        return IntentClassificationResult(
+            intent="business_query", confidence=0.9, business_query_type="top_customers", business_period=period or "this_month",
+        )
+    if any(word in lowered for word in ("who owes", "outstanding", "unpaid balance", "pending payment", "pending payments")):
+        return IntentClassificationResult(intent="business_query", confidence=0.9, business_query_type="dues")
+    if any(word in lowered for word in ("sales", "revenue", "turnover")):
+        return IntentClassificationResult(
+            intent="business_query", confidence=0.9, business_query_type="sales", business_period=period or "this_week",
+        )
 
     # Future feature check
     future_kws = ("remind", "reminder", "due", "dues", "accounting", "salary", "whatsapp setting", "report")

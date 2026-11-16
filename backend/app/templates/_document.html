@@ -50,20 +50,21 @@
     }
 
     /* ── Header ─────────────────────────────────────────────────────── */
-    .accent { height: 4px; background: #ea580c; border-radius: 2px; margin-bottom: 18px; }
+    .accent { height: 4px; background: {{ brand_color }}; border-radius: 2px; margin-bottom: 18px; }
 
     .seller td.logo-cell { width: 46px; }
     .monogram {
       width: 38px; height: 38px; border-radius: 9px;
-      background: #ea580c; color: #fff;
+      background: {{ brand_color }}; color: {{ brand_text_color }};
       font-size: 15px; font-weight: 800; line-height: 38px; text-align: center;
     }
+    .logo-image { width: 38px; height: 38px; object-fit: contain; display: block; }
     .seller-name { font-size: 17px; font-weight: 800; color: #111827; letter-spacing: -0.01em; line-height: 1.2; }
     .seller-meta { margin-top: 3px; color: #4b5563; max-width: 92mm; }
     .seller-meta strong { color: #111827; font-weight: 600; }
 
     .doc-title { text-align: right; }
-    .doc-kind { font-size: 9px; font-weight: 800; letter-spacing: 0.22em; color: #ea580c; }
+    .doc-kind { font-size: 9px; font-weight: 800; letter-spacing: 0.22em; color: {{ brand_color }}; }
     .doc-copy { font-size: 7.5px; font-weight: 600; letter-spacing: 0.08em; color: #9ca3af; text-transform: uppercase; }
     .doc-number { font-size: 18px; font-weight: 800; color: #111827; margin-top: 2px; letter-spacing: -0.01em; }
     .doc-meta { margin-top: 8px; margin-left: auto; width: auto; }
@@ -106,7 +107,7 @@
     .summary { margin-top: 14px; page-break-inside: avoid; break-inside: avoid; }
     .summary td.left { width: 54%; padding-right: 18px; }
     .words {
-      border-left: 3px solid #ea580c; background: #fff7ed;
+      border-left: 3px solid {{ brand_color }}; background: #fff7ed;
       padding: 8px 11px; border-radius: 0 6px 6px 0;
     }
     .words .text { font-weight: 600; color: #111827; margin-top: 2px; }
@@ -119,7 +120,7 @@
     .totals td.k .sub { color: #9ca3af; font-size: 8.5px; }
     .totals tr.subtotal td { padding-top: 0; font-weight: 600; color: #111827; }
     .totals tr.rule td { border-top: 1px solid #e5e7eb; padding: 0; height: 6px; }
-    .grand { margin-top: 8px; background: #ea580c; color: #fff; border-radius: 8px; }
+    .grand { margin-top: 8px; background: {{ brand_color }}; color: {{ brand_text_color }}; border-radius: 8px; }
     .grand td { padding: 9px 12px; vertical-align: middle; }
     .grand .k { font-size: 9px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
     .grand .v { font-size: 15px; font-weight: 800; }
@@ -135,7 +136,7 @@
 
     .footer { margin-top: 22px; padding-top: 8px; border-top: 1px solid #f0f1f3; font-size: 8px; color: #9ca3af; }
     .footer td.brand { text-align: right; }
-    .footer .dot { color: #ea580c; font-weight: 800; }
+    .footer .dot { color: {{ brand_color }}; font-weight: 800; }
   </style>
 </head>
 <body>
@@ -149,7 +150,11 @@
         <table class="seller">
           <tr>
             <td class="logo-cell">
-              <div class="monogram">{{ (tenant.business_name or '?')[:1] | upper }}</div>
+              {% if logo_data_url %}
+                <img class="logo-image" src="{{ logo_data_url }}" alt="{{ tenant.business_name }} logo">
+              {% else %}
+                <div class="monogram">{{ (tenant.business_name or '?')[:1] | upper }}</div>
+              {% endif %}
             </td>
             <td>
               <div class="seller-name">{{ tenant.business_name }}</div>
