@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import { initials } from '../lib/format'
+import Logo from './Logo'
 import OnboardOverlay from './OnboardOverlay'
 import { IconBox, IconChat, IconFile, IconHome, IconSettings, IconUsers } from './icons'
 
@@ -16,15 +17,6 @@ const NAV = [
 
 // Phones get the five daily-use screens; Settings sits in the top bar.
 const MOBILE_NAV = NAV.slice(0, 5)
-
-function Logo() {
-  return (
-    <div className="flex items-center gap-2.5">
-      <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-orange-500 font-display text-base font-extrabold text-white shadow-sm">M</span>
-      <span className="font-display text-lg font-bold tracking-tight text-slate-900">Munim</span>
-    </div>
-  )
-}
 
 export default function AppShell({ children }: { children: ReactNode }) {
   const { onboarded, completeOnboarding, business } = useApp()

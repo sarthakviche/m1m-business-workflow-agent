@@ -1,9 +1,9 @@
 """
-AppUser model — represents a staff member / owner of a tenant.
+AppUser model — a person who can sign in to one business.
 
-Sprint 1 note: Authentication is NOT implemented in Sprint 1.
-This table is created for schema completeness (FK relationships) but
-no users are seeded. The full auth flow (phone + OTP) is Sprint 2+.
+Credentials live with the auth provider (Supabase Auth). ``auth_subject`` is
+the provider's stable user ID and is the link from a verified login token to
+a tenant. A login belongs to at most one business for now.
 """
 
 import uuid
@@ -37,7 +37,9 @@ class AppUser(Base):
         ForeignKey("tenant.id", ondelete="CASCADE"),
         nullable=False,
     )
-    phone: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    auth_subject: Mapped[str | None] = mapped_column(Text, nullable=True, unique=True)
+    email: Mapped[str | None] = mapped_column(Text, nullable=True)
+    phone: Mapped[str | None] = mapped_column(Text, nullable=True, unique=True)
     name: Mapped[str | None] = mapped_column(Text, nullable=True)
     role: Mapped[str] = mapped_column(Text, nullable=False, default="owner")
     created_at: Mapped[datetime] = mapped_column(

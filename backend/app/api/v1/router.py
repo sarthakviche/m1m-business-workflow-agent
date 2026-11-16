@@ -3,14 +3,18 @@ M1M (Munim.ai) — API v1 Router
 """
 
 from fastapi import APIRouter
+from app.api.v1.account import router as account_router
+from app.api.v1.catalog import router as catalog_router
 from app.api.v1.chat import router as chat_router
 from app.api.v1.documents import router as documents_router
 from app.api.v1.management import router as management_router
 from app.channels.telegram.router import router as telegram_router
 
 api_v1_router = APIRouter(prefix="/api/v1")
+api_v1_router.include_router(account_router)
 api_v1_router.include_router(chat_router)
 api_v1_router.include_router(management_router)
+api_v1_router.include_router(catalog_router)
 api_v1_router.include_router(telegram_router)
 
 # Document serving is mounted at /documents (no /api/v1 prefix)

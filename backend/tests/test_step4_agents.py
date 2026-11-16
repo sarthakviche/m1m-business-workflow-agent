@@ -456,7 +456,7 @@ async def test_convert_quotation_to_invoice(db_session, tenant_id_uuid):
 
     # Verify quotation is marked as 'converted'
     q_res = await db_session.execute(
-        select(Quotation).where(Quotation.quotation_number == quote_num)
+        select(Quotation).where(Quotation.tenant_id == tenant_id_uuid, Quotation.quotation_number == quote_num)
     )
     q_row = q_res.scalar_one()
     assert q_row.status == "converted"

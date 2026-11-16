@@ -7,7 +7,7 @@ and WeasyPrint.
 Per TRD Section 7:
   - Templates in `app/templates/quotation.html` and `invoice.html`.
   - Renders Jinja2 HTML → PDF.
-  - Stores PDFs locally in Sprint 1 under `generated_docs/{tenant_id}/{doc_type}/`.
+  - Stores each PDF in the database with its document (app.models.document).
 
 Renderer chain (first that works wins):
   1. WeasyPrint — production. Needs the Pango system libraries
@@ -15,16 +15,19 @@ Renderer chain (first that works wins):
   2. Headless Chromium / Chrome / Edge print-to-PDF — renders the same
      template where those libraries are missing (e.g. a Windows dev machine).
      Set PDF_BROWSER_PATH to choose the browser binary.
-  3. A minimal text-only PDF, so a document is never lost.
+  3. Development only: a minimal text-only PDF. In production the document fails
+     and is rolled back, because a customer must never get a bare text invoice.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import shutil
 import subprocess
 import tempfile
+import threading
 from datetime import datetime, timedelta
 from decimal import Decimal
 from functools import lru_cache
@@ -33,11 +36,24 @@ from typing import Any, Dict, List, Optional
 import uuid
 
 import jinja2
+from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
+from app.models.document import DocumentFile
 from app.services.gst_calculator import GSTValidationError, calculate_invoice_totals, calculate_line_tax
 from app.services.number_format import amount_in_words, format_inr, format_quantity
 
 logger = logging.getLogger(__name__)
+
+_RENDER_SLOTS = threading.Semaphore(2)
+
+
+class DocumentRenderError(RuntimeError):
+    """
+    No renderer could produce the PDF. Deliberately not a MunimError: those are
+    reported as a normal reply and committed, while this must undo the whole document.
+    """
 
 # ─── Template & Output Paths ──────────────────────────────────────────────────
 _SERVICES_DIR = Path(__file__).resolve().parent
@@ -144,17 +160,58 @@ def _render_with_browser(html: str, file_path: Path) -> bool:
     return file_path.is_file() and file_path.stat().st_size > 0
 
 
-def _write_pdf(html: str, file_path: Path, fallback_title: str, fallback_lines: List[str]) -> None:
-    weasyprint = _weasyprint()
-    if weasyprint is not None:
-        try:
-            weasyprint.HTML(string=html).write_pdf(target=str(file_path))
-            return
-        except Exception:
-            logger.exception("pdf.weasyprint_render_failed")
-    if _render_with_browser(html, file_path):
-        return
-    file_path.write_bytes(_generate_minimal_pdf_bytes(fallback_title, fallback_lines))
+def _render_pdf(html: str, fallback_title: str, fallback_lines: List[str]) -> bytes:
+    """Blocking and memory-hungry, so it runs on a worker thread, a couple at a time."""
+    with _RENDER_SLOTS:
+        weasyprint = _weasyprint()
+        if weasyprint is not None:
+            try:
+                return weasyprint.HTML(string=html).write_pdf()
+            except Exception:
+                logger.exception("pdf.weasyprint_render_failed")
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "document.pdf"
+            if _render_with_browser(html, target):
+                return target.read_bytes()
+
+    logger.error("pdf.all_renderers_failed")
+    if not get_settings().is_development:
+        # Never issue a customer a bare text invoice. The whole document is rolled back.
+        raise DocumentRenderError("No PDF renderer succeeded")
+    return _generate_minimal_pdf_bytes(fallback_title, fallback_lines)
+
+
+async def _store_pdf(
+    session: AsyncSession, tenant_id_str: str, doc_type: str, number: str,
+    html: str, fallback_title: str, fallback_lines: List[str],
+) -> str:
+    content = await asyncio.to_thread(_render_pdf, html, fallback_title, fallback_lines)
+    filename = f"{number}.pdf"
+    tenant_id = uuid.UUID(tenant_id_str)
+    # Replaces a leftover only if an earlier attempt committed this number, which shouldn't happen.
+    await session.execute(delete(DocumentFile).where(
+        DocumentFile.tenant_id == tenant_id, DocumentFile.doc_type == doc_type, DocumentFile.filename == filename,
+    ))
+    session.add(DocumentFile(tenant_id=tenant_id, doc_type=doc_type, filename=filename, content=content))
+    await session.flush()
+    return f"{_PDF_URL_PREFIX}{tenant_id_str}/{doc_type}/{filename}"
+
+
+async def load_pdf(session: AsyncSession, pdf_url: str | None, tenant_id: uuid.UUID) -> bytes | None:
+    """The stored PDF behind a pdf_url, only if it belongs to tenant_id."""
+    if not pdf_url or not pdf_url.startswith(_PDF_URL_PREFIX) or not pdf_url.lower().endswith(".pdf"):
+        return None
+    parts = pdf_url[len(_PDF_URL_PREFIX):].split("/")
+    if len(parts) != 3 or parts[0] != str(tenant_id):
+        return None
+    content = (await session.execute(select(DocumentFile.content).where(
+        DocumentFile.tenant_id == tenant_id, DocumentFile.doc_type == parts[1], DocumentFile.filename == parts[2],
+    ))).scalar_one_or_none()
+    if content is not None:
+        return content
+    # Documents made before PDFs moved into the database.
+    legacy = resolve_pdf_path(pdf_url, tenant_id)
+    return legacy.read_bytes() if legacy else None
 
 
 def _generate_minimal_pdf_bytes(title: str, lines: list[str]) -> bytes:
@@ -267,21 +324,15 @@ def render_quotation_html(
     )
 
 
-def generate_quotation_pdf(
+async def generate_quotation_pdf(
+    session: AsyncSession,
     tenant: Any,
     customer: Any,
     quotation: Any,
     lines: List[Dict[str, Any]],
 ) -> str:
-    """
-    Render Quotation Jinja2 HTML template and output a PDF file.
-
-    Returns the file path / URL string to the generated PDF.
-    """
+    """Render the quotation to PDF and store it in the caller's transaction. Returns its URL."""
     tenant_id_str = str(tenant.id)
-    out_dir = _DOCS_DIR / tenant_id_str / "quotations"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    file_path = out_dir / f"{quotation.quotation_number}.pdf"
 
     rendered_html = render_quotation_html(tenant, customer, quotation, lines)
 
@@ -297,9 +348,8 @@ def generate_quotation_pdf(
         summary_lines.append(
             f"- {l.get('item_name')}: {l.get('quantity')} {l.get('unit', 'pcs')} @ INR {l.get('unit_price', 0):.2f} = INR {l.get('line_total', 0):.2f}"
         )
-    _write_pdf(rendered_html, file_path, f"QUOTATION {quotation.quotation_number}", summary_lines)
-
-    return f"/documents/{tenant_id_str}/quotations/{quotation.quotation_number}.pdf"
+    return await _store_pdf(session, tenant_id_str, "quotations", quotation.quotation_number,
+                            rendered_html, f"QUOTATION {quotation.quotation_number}", summary_lines)
 
 
 # ─── Invoice ──────────────────────────────────────────────────────────────────
@@ -335,22 +385,16 @@ def render_invoice_html(
     )
 
 
-def generate_invoice_pdf(
+async def generate_invoice_pdf(
+    session: AsyncSession,
     tenant: Any,
     customer: Any,
     invoice: Any,
     lines: List[Dict[str, Any]],
     quotation_number: Optional[str] = None,
 ) -> str:
-    """
-    Render Invoice Jinja2 HTML template and output a PDF file.
-
-    Returns the file path / URL string to the generated PDF.
-    """
+    """Render the invoice to PDF and store it in the caller's transaction. Returns its URL."""
     tenant_id_str = str(tenant.id)
-    out_dir = _DOCS_DIR / tenant_id_str / "invoices"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    file_path = out_dir / f"{invoice.invoice_number}.pdf"
 
     rendered_html = render_invoice_html(tenant, customer, invoice, lines, quotation_number=quotation_number)
 
@@ -368,6 +412,5 @@ def generate_invoice_pdf(
         summary_lines.append(
             f"- {l.get('item_name')}: {l.get('quantity')} {l.get('unit', 'pcs')} @ INR {l.get('unit_price', 0):.2f} (GST {l.get('gst_rate_percent')}%) = INR {l.get('line_grand_total', l.get('line_total', 0)):.2f}"
         )
-    _write_pdf(rendered_html, file_path, f"TAX INVOICE {invoice.invoice_number}", summary_lines)
-
-    return f"/documents/{tenant_id_str}/invoices/{invoice.invoice_number}.pdf"
+    return await _store_pdf(session, tenant_id_str, "invoices", invoice.invoice_number,
+                            rendered_html, f"TAX INVOICE {invoice.invoice_number}", summary_lines)

@@ -3,6 +3,7 @@ import type { KeyboardEvent, ReactNode } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import DocumentResultCard from '../components/chat/DocumentResultCard'
 import { IconAlert, IconBox, IconFile, IconPlus, IconReceipt, IconSend } from '../components/icons'
+import { LogoMark } from '../components/Logo'
 import { Button } from '../components/ui'
 import { useApp } from '../context/AppContext'
 import { useChat } from '../hooks/useChat'
@@ -57,7 +58,7 @@ function Bubble({ message }: { message: ChatMessage }) {
 function Welcome({ businessName, onPick }: { businessName: string; onPick: (prompt: string) => void }) {
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col justify-center py-8">
-      <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-orange-500 font-display text-xl font-extrabold text-white">M</span>
+      <LogoMark className="h-12 self-start" />
       <h1 className="mt-4 font-display text-2xl font-bold tracking-tight text-slate-900">How can I help {businessName} today?</h1>
       <p className="mt-1 text-sm text-slate-500">
         Type in English or Hinglish. Prices, GST and stock always come from your catalog. Nothing is guessed.

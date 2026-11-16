@@ -104,29 +104,34 @@ def test_rendered_inter_state_quotation_shows_igst_only():
     assert "IGST @ 18%" in html and "CGST @" not in html
 
 
-def test_renderer_falls_back_to_minimal_pdf(tmp_path, monkeypatch):
+def test_renderer_falls_back_to_minimal_pdf_in_development(monkeypatch):
     monkeypatch.setattr(pdf_service, "_weasyprint", lambda: None)
     monkeypatch.setattr(pdf_service, "_render_with_browser", lambda html, path: False)
-    target = tmp_path / "q.pdf"
-    pdf_service._write_pdf("<p>x</p>", target, "QUOTATION Q-1", ["line"])
-    assert target.read_bytes().startswith(b"%PDF-1.4")
+    assert pdf_service._render_pdf("<p>x</p>", "QUOTATION Q-1", ["line"]).startswith(b"%PDF-1.4")
 
 
-def test_renderer_prefers_weasyprint(tmp_path, monkeypatch):
+def test_production_never_issues_a_text_only_document(monkeypatch):
+    monkeypatch.setattr(pdf_service, "_weasyprint", lambda: None)
+    monkeypatch.setattr(pdf_service, "_render_with_browser", lambda html, path: False)
+    monkeypatch.setattr(pdf_service, "get_settings", lambda: SimpleNamespace(is_development=False))
+    with pytest.raises(pdf_service.DocumentRenderError):
+        pdf_service._render_pdf("<p>x</p>", "TAX INVOICE INV-1", ["line"])
+
+
+def test_renderer_prefers_weasyprint(monkeypatch):
     calls = []
 
     class FakeHTML:
         def __init__(self, string):
             calls.append(string)
 
-        def write_pdf(self, target):
-            open(target, "wb").write(b"%PDF-weasy")
+        def write_pdf(self):
+            return b"%PDF-weasy"
 
     monkeypatch.setattr(pdf_service, "_weasyprint", lambda: SimpleNamespace(HTML=FakeHTML))
     monkeypatch.setattr(pdf_service, "_render_with_browser", lambda html, path: pytest.fail("browser not needed"))
-    target = tmp_path / "q.pdf"
-    pdf_service._write_pdf("<p>x</p>", target, "t", [])
-    assert target.read_bytes() == b"%PDF-weasy" and calls == ["<p>x</p>"]
+    assert pdf_service._render_pdf("<p>x</p>", "t", []) == b"%PDF-weasy"
+    assert calls == ["<p>x</p>"]
 
 
 # ─── Tax invoice ─────────────────────────────────────────────────────────────

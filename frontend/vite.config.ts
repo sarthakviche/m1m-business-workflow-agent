@@ -12,7 +12,8 @@ export default defineConfig({
         target: 'http://localhost:8000',
         changeOrigin: true,
       },
-      '/documents': {
+      // PDFs only: /documents on its own is the app's Documents page.
+      '^/documents/.+': {
         target: 'http://localhost:8000',
         changeOrigin: true,
       },

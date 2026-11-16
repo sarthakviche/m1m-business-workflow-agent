@@ -40,12 +40,11 @@ if not _is_sqlite:
 
 engine = create_async_engine(
     _db_url,
-    # Enable SQL echo only in development — never in production
-    echo=_settings.env == "development",
+    # Off by default: SQL logs contain customer data.
+    echo=_settings.sql_echo,
     connect_args=_connect_args,
-    # Connection pool settings suitable for a low-traffic dev environment
-    pool_size=5,
-    max_overflow=10,
+    pool_size=_settings.db_pool_size,
+    max_overflow=_settings.db_max_overflow,
     pool_pre_ping=True,  # test connections before using them from the pool
 )
 
@@ -56,3 +55,20 @@ AsyncSessionLocal = async_sessionmaker(
     autocommit=False,
     autoflush=False,
 )
+
+
+async def get_db_session():
+    """
+    FastAPI dependency yielding one session per request.
+
+    The commit here is only a safety net, because it can run after the response
+    is sent. Endpoints that write must commit before returning, so a failed
+    commit becomes an error response rather than a false success.
+    """
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise

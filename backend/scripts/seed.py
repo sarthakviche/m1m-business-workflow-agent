@@ -96,7 +96,7 @@ def make_insert_stmt(table, db_url: str, values: dict):
     else:
         # PostgreSQL: use ON CONFLICT DO NOTHING  
         stmt = pg_insert(table).values(**values)
-        stmt = stmt.on_conflict_do_nothing(index_elements=["id"])
+        stmt = stmt.on_conflict_do_nothing()
     
     return stmt
 

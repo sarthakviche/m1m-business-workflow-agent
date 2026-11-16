@@ -4,9 +4,12 @@ Munim.ai — Telegram update handler
 Processes one Telegram update end to end:
 
     update → private-chat filter → dedup claim (update_id) → per-chat lock
-           → /command  : handled deterministically (no LLM)
-           → free text : linked identity → tenant → server-side history
-                         → MunimOrchestrator → commit → reply (+ PDF)
+           → /command      : handled deterministically (no LLM)
+           → photo / file  : price-list import, saved only after a button tap
+                             (see catalog_import.py)
+           → button tap    : import actions (set GST, save, discard)
+           → free text     : linked identity → tenant → server-side history
+                             → MunimOrchestrator → commit → reply (+ PDF)
 
 Invariants:
     - The tenant comes only from the linked ChannelIdentity.
@@ -21,16 +24,17 @@ import asyncio
 import logging
 import uuid
 import weakref
-from typing import Awaitable, Callable, Dict, Optional
+from typing import Any, Awaitable, Callable, Dict, Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.channels import linking
 from app.channels.inbound_events import claim_event
+from app.channels.telegram.catalog_import import CALLBACK_PREFIX, TelegramCatalogImport, is_import_message
 from app.channels.telegram.client import TelegramAPIError, TelegramClient
 from app.channels.telegram.formatting import split_message, to_plain_text, to_telegram_html
-from app.channels.telegram.types import BotCommand, TelegramMessage, TelegramUpdate
+from app.channels.telegram.types import BotCommand, TelegramCallbackQuery, TelegramMessage, TelegramUpdate
 from app.conversation.history import load_recent_history
 from app.conversation.store import conversation_store
 from app.models.tenant import Tenant
@@ -38,7 +42,7 @@ from app.orchestrator.context import RequestContext
 from app.orchestrator.message import NormalizedMessage
 from app.orchestrator.orchestrator import MunimOrchestrator, get_orchestrator
 from app.services.document_lookup import DocumentSummary, find_document_by_number, list_recent_documents
-from app.services.pdf_service import resolve_pdf_path
+from app.services.pdf_service import load_pdf
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +65,8 @@ HELP_TEXT = (
     "I'm **Munim**, your business assistant. Just type what you need:\n"
     "• _Create a quotation for Ramesh Traders, 10 TMT Steel Rod 12mm_\n"
     "• _Make an invoice for Q-202611-001_\n"
-    "• _What's the price and stock of MS Hex Bolt?_\n\n"
+    "• _What's the price and stock of MS Hex Bolt?_\n"
+    "• Send a **photo of your price list** (or a PDF/CSV) to add items to your catalog\n\n"
     "Commands:\n"
     "/quotations — recent quotations\n"
     "/invoices — recent invoices\n"
@@ -75,7 +80,7 @@ NOT_LINKED_TEXT = (
     "`/link YOUR-CODE`"
 )
 LINK_FAILED_TEXT = "That link code is invalid, expired or already used. Please ask for a new one."
-TEXT_ONLY_TEXT = "I can only read text messages for now. Please type your request."
+TEXT_ONLY_TEXT = "I can read text messages, and photos, PDFs or CSVs of your price list. Please type your request."
 ERROR_TEXT = "Something went wrong on my side. Please try again in a moment."
 
 _DOC_LABELS = {"quotation": "quotations", "invoice": "invoices"}
@@ -103,6 +108,7 @@ class TelegramUpdateHandler:
         # Serialize messages per chat so multi-turn state is never raced.
         # Single-process guarantee; across workers the DB state still applies.
         self._chat_locks: "weakref.WeakValueDictionary[int, asyncio.Lock]" = weakref.WeakValueDictionary()
+        self._catalog_import = TelegramCatalogImport(client, session_factory, self.reply)
         self._commands: Dict[str, Callable[[TelegramMessage, str], Awaitable[None]]] = {
             "start": self._cmd_start,
             "link": self._cmd_link,
@@ -115,8 +121,10 @@ class TelegramUpdateHandler:
         }
 
     async def handle(self, update: TelegramUpdate) -> None:
-        message = update.message
-        if message is None or message.from_user is None or message.from_user.is_bot:
+        query = update.callback_query
+        message = query.message if query is not None else update.message
+        user = query.from_user if query is not None else (message.from_user if message else None)
+        if message is None or user is None or user.is_bot:
             return
         if message.chat.type != "private":
             # Group chats would expose one business's documents to every member.
@@ -131,12 +139,21 @@ class TelegramUpdateHandler:
             self._chat_locks[message.chat.id] = lock
         async with lock:
             try:
-                await self._dispatch(message, update.update_id)
+                if query is not None:
+                    await self._dispatch_callback(query)
+                else:
+                    await self._dispatch(message, update.update_id)
             except Exception:
                 logger.exception("telegram.update.failed", extra={"update_id": update.update_id})
                 await self._safe_reply(message.chat.id, ERROR_TEXT)
 
     async def _dispatch(self, message: TelegramMessage, update_id: int) -> None:
+        if is_import_message(message):
+            async with self._session_factory() as session:
+                tenant_id = await self._linked_tenant(session, message)
+            if tenant_id is not None:
+                await self._catalog_import.handle_file(message, tenant_id)
+            return
         text = (message.text or "").strip()
         if not text:
             await self.reply(message.chat.id, TEXT_ONLY_TEXT)
@@ -148,6 +165,18 @@ class TelegramUpdateHandler:
             await handler(message, arg.strip())
             return
         await self._handle_chat(message, update_id, text)
+
+    async def _dispatch_callback(self, query: TelegramCallbackQuery) -> None:
+        if not (query.data or "").startswith(f"{CALLBACK_PREFIX}:"):
+            await self.client.answer_callback_query(query.id)
+            return
+        async with self._session_factory() as session:
+            identity = await linking.get_identity(session, CHANNEL, str(query.from_user.id))
+        if identity is None:
+            await self.client.answer_callback_query(query.id)
+            await self.reply(query.message.chat.id, NOT_LINKED_TEXT)
+            return
+        await self._catalog_import.handle_callback(query, identity.tenant_id)
 
     # ── Free-text business requests ──────────────────────────────────────────
 
@@ -294,22 +323,33 @@ class TelegramUpdateHandler:
         return name or "your business"
 
     async def _send_pdf(self, chat_id: int, tenant_id: uuid.UUID, pdf_url: Optional[str], number: Optional[str]) -> bool:
-        path = resolve_pdf_path(pdf_url, tenant_id)
-        if path is None:
+        async with self._session_factory() as session:
+            content = await load_pdf(session, pdf_url, tenant_id)
+        if content is None:
             logger.warning("telegram.pdf.missing", extra={"document_number": number})
             return False
-        await self.client.send_document(chat_id, path, filename=f"{number or path.stem}.pdf", caption=number)
+        await self.client.send_document(chat_id, content, filename=f"{number or 'document'}.pdf", caption=number)
         return True
 
-    async def reply(self, chat_id: int, text: str) -> None:
-        """Send agent Markdown as Telegram HTML, falling back to plain text if Telegram rejects the markup."""
-        for chunk in split_message(text):
+    async def reply(
+        self, chat_id: int, text: str, *, reply_markup: Optional[Dict[str, Any]] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Send agent Markdown as Telegram HTML, falling back to plain text if Telegram rejects the markup.
+        Buttons attach to the last chunk; returns that sent message.
+        """
+        chunks = split_message(text)
+        sent: Optional[Dict[str, Any]] = None
+        for index, chunk in enumerate(chunks):
+            markup = reply_markup if index == len(chunks) - 1 else None
             try:
-                await self.client.send_message(chat_id, to_telegram_html(chunk), parse_mode="HTML")
+                sent = await self.client.send_message(chat_id, to_telegram_html(chunk), parse_mode="HTML",
+                                                      reply_markup=markup)
             except TelegramAPIError as exc:
                 if exc.error_code != 400:
                     raise
-                await self.client.send_message(chat_id, to_plain_text(chunk))
+                sent = await self.client.send_message(chat_id, to_plain_text(chunk), reply_markup=markup)
+        return sent
 
     async def _safe_reply(self, chat_id: int, text: str) -> None:
         try:

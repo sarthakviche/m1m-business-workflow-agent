@@ -30,7 +30,8 @@ from app.models.customer import Customer
 from app.models.item import Item
 from app.services.catalog_service import lookup_catalog_item_details, list_catalog_summary
 from app.services.customer_lookup import lookup_customer_scored, create_customer_if_missing
-from app.services.intent_classifier import classify_intent_sync
+from app.services.ai_quota import reserve_ai_call
+from app.services.intent_classifier import classify_intent_sync, classify_with_rules
 from app.services.invoice_service import (
     InsufficientStockError,
     QuotationNotFoundError,
@@ -39,6 +40,12 @@ from app.services.invoice_service import (
 )
 from app.services.item_lookup import lookup_item
 from app.services.quotation_service import create_quotation
+
+
+_AI_LIMIT_NOTE = (
+    "\n\n_I've reached today's limit for understanding free-form requests, so please be specific for now. "
+    "For example: Create quotation for Ramesh Traders for 10 Steel Rod 12mm._"
+)
 
 
 @asynccontextmanager
@@ -74,9 +81,17 @@ async def classify_intent_node(state: AgentState, config: RunnableConfig) -> Dic
             )
 
         # 2. Extract new entities. The Gemini SDK call is blocking, so run it off
-        # the event loop to keep other chats responsive.
-        res = await asyncio.to_thread(classify_intent_sync, raw_message, conversation_context)
-        return await _resolve_intent(conv_state, res, raw_message, session)
+        # the event loop to keep other chats responsive. Over the daily AI limit,
+        # the rule-based parser takes over.
+        ai_allowed = await reserve_ai_call(session, context.business_id)
+        if ai_allowed:
+            res = await asyncio.to_thread(classify_intent_sync, raw_message, conversation_context)
+        else:
+            res = classify_with_rules(raw_message, conversation_context)
+        resolved = await _resolve_intent(conv_state, res, raw_message, session)
+        if not ai_allowed and resolved["detected_intent"] == "clarify":
+            resolved["response_text"] += _AI_LIMIT_NOTE
+        return resolved
 
 
 # A reply that is only a quantity, e.g. "50", "50 pcs", "12.5 kg".

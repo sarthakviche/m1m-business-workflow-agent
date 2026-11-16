@@ -22,9 +22,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.item import Item
 
 
-def _normalize_name(text: str) -> str:
+def normalize_item_name(text: str) -> str:
     """Normalize string for fuzzy comparison (lower, strip punctuation/spaces)."""
     return re.sub(r"[^\w\s]", "", text).lower().strip()
+
+
 
 
 async def lookup_item(
@@ -53,7 +55,7 @@ async def lookup_item(
     if not raw_query:
         return None
 
-    norm_query = _normalize_name(raw_query)
+    norm_query = normalize_item_name(raw_query)
     if not norm_query:
         return None
 
@@ -71,7 +73,7 @@ async def lookup_item(
 
     # 2. Normalized exact match
     for it in items:
-        if _normalize_name(it.name) == norm_query:
+        if normalize_item_name(it.name) == norm_query:
             return it
 
     # 3. Substring / token matching
@@ -81,7 +83,7 @@ async def lookup_item(
     query_tokens = set(norm_query.split())
 
     for it in items:
-        it_norm = _normalize_name(it.name)
+        it_norm = normalize_item_name(it.name)
         it_tokens = set(it_norm.split())
 
         # Check full containment
@@ -100,7 +102,7 @@ async def lookup_item(
                 best_score = score
                 best_candidate = it
 
-    if best_candidate and (best_score >= 0.3 or norm_query in _normalize_name(best_candidate.name)):
+    if best_candidate and (best_score >= 0.3 or norm_query in normalize_item_name(best_candidate.name)):
         return best_candidate
 
     return None

@@ -9,7 +9,7 @@
   <a href="#-tech-stack"><img src="https://img.shields.io/badge/AI-LangGraph%20%7C%20Gemini%202.5-orange?style=for-the-badge" alt="AI Stack"></a>
   <a href="#-tech-stack"><img src="https://img.shields.io/badge/Backend-FastAPI%20%7C%20Python%203.12-blue?style=for-the-badge&logo=fastapi" alt="Backend"></a>
   <a href="#-tech-stack"><img src="https://img.shields.io/badge/Frontend-React%2019%20%7C%20Vite%20%7C%20Tailwind-61DAFB?style=for-the-badge&logo=react" alt="Frontend"></a>
-  <a href="#-tests--quality-assurance"><img src="https://img.shields.io/badge/Tests-136%20Passed-success?style=for-the-badge" alt="Tests"></a>
+  <a href="#-tests--quality-assurance"><img src="https://img.shields.io/badge/Tests-320%20Passed-success?style=for-the-badge" alt="Tests"></a>
 </p>
 
 ---
@@ -72,6 +72,7 @@ graph TD
 - 🔄 **1-Click Quotation-to-Invoice Conversion:** Convert `Q-YYYYMM-XXX` into `INV-YYYYMM-XXX` while decrementing stock atomically.
 - 📦 **Fail-Safe Stock Validation:** Real-time inventory check blocks invoices when requested quantity exceeds warehouse stock.
 - 🔍 **Live Catalog & Price Lookup:** Inquire about product pricing, HSN codes, and warehouse stock levels via chat without triggering document generation.
+- 📷 **Price-List Onboarding:** Photograph a paper rate list (or upload a PDF/CSV) and Gemini transcribes items, prices, units, HSN and GST. Every row is validated and shown for review; nothing is saved until the owner confirms.
 - 📑 **Audit-Grade PDF Generation:** Generates branded, GST-compliant PDFs using WeasyPrint with pure HTML/CSS fallbacks.
 
 ---
@@ -161,10 +162,11 @@ DATABASE_URL=sqlite+aiosqlite:///./m1m.db
 # Gemini AI API Key
 GEMINI_API_KEY=your_actual_gemini_api_key_here
 
-# Tenant & Security
+# Demo tenant used when no one is logged in (development only)
 SPRINT_TENANT_ID=a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11
-APP_SECRET_KEY=generate_a_random_32_character_secret_key
 ```
+
+With `ENV=development` there is no login, and everything runs as the seeded demo business. Any other value, including leaving `ENV` unset, requires login and refuses to start without safe production settings. See [`.env.example`](./.env.example) and [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md).
 
 #### D. Run Database Migrations & Seed Data
 
@@ -228,23 +230,40 @@ The bot runs the same orchestrator as web chat. Each Telegram chat must be linke
 
 Bot commands: `/quotations`, `/invoices`, `/pdf NUMBER`, `/cancel`, `/unlink`, `/help`. Document lists and PDFs are read straight from the database. Free text goes to the agent, and its replies come from the catalog and tool results.
 
+Send the bot a **photo, PDF or CSV of a price list** to import it. The bot reads it with the same checks as the web importer and lists what it found. If rows have no GST rate, it asks for one with buttons. It saves only when you tap **Save**. Rows without a price are skipped, and imports expire after 30 minutes.
+
+### 📷 6. Price-List Import (onboarding)
+
+New businesses add their catalog from **Stock → Import price list** (also offered at the end of first-run setup).
+
+1. `POST /api/v1/catalog/import/preview` takes a photo (JPG/PNG/WEBP/HEIC), PDF or CSV up to 10 MB and returns rows to review. Nothing is written.
+   - CSVs with recognisable headers (`Item`, `Rate`, `GST %`, `HSN`, `UOM`, `Stock`…) are parsed directly, with no model call.
+   - Everything else goes to Gemini, which is told to leave unreadable or missing values empty rather than guess.
+   - Prices ≤ 0, rates that aren't GST slabs and malformed HSN codes are dropped and flagged. Rows are matched to existing items by exact normalised name, so "TMT Rod 10mm" never overwrites "TMT Rod 12mm".
+2. `POST /api/v1/catalog/import` saves the reviewed rows in one transaction. It creates new items, updates price/unit/GST/HSN on existing ones, and sets stock only where a quantity was given. Re-importing the same list changes nothing.
+
+`PATCH /api/v1/business` updates the business name, state, GSTIN and address shown on documents.
+
 ---
 
 ## 🧪 Tests & Quality Assurance
 
-The codebase includes an extensive automated test suite covering unit math, database operations, fuzzy lookup scores, and full LangGraph workflow execution.
+The test suite covers GST maths, database operations, fuzzy lookups, LangGraph workflows, and multi-tenant isolation. Tests run offline against a throwaway database built from the real migrations, so they need no secrets and never touch your `m1m.db`.
 
 ```bash
-# Run all automated tests
-pytest backend/tests -v
+cd backend
 
-# Run fast offline tests (bypassing external LLM network calls)
-pytest backend/tests -v -k "not gemini"
+# Run all tests
+pytest tests -q
+
+# Also run the live Gemini smoke test (uses your real key and quota)
+RUN_LIVE_GEMINI=1 pytest tests -q
+
+# Run on a disposable Postgres, which adds the concurrency tests. Its data may be overwritten.
+TEST_DATABASE_URL=postgresql+asyncpg://postgres:password@localhost:5432/postgres pytest tests -q
 ```
 
-```text
-======================= 136 passed in 12.45s =======================
-```
+`tests/test_multi_tenant.py` is the security gate: two businesses sign up with real signed tokens and try to reach each other's data, and any new endpoint that doesn't require credentials fails the suite.
 
 ---
 
@@ -297,11 +316,11 @@ m1m-business-workflow-agent/
 
 ## 🚢 Deployment Guide
 
-- **Frontend (Vercel):** Connect repository, set Root Directory to `frontend`, and configure `vercel.json` rewrites to proxy `/api` and `/documents` to your backend.
-- **Backend (Render / Railway / GCP Cloud Run):** Deploy Python 3.12 container with `uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port $PORT`.
-- **Database (Neon / Supabase):** Connect serverless PostgreSQL via `DATABASE_URL=postgresql+asyncpg://...` and run `alembic upgrade head`.
+Munim is designed to run on free tiers: Cloudflare Pages (web app), Render (API) and Supabase (database, auth, storage).
 
-*(For complete slide-ready technical documentation, see [`MVP-technical-working.md`](./MVP-technical-working.md)).*
+- [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md): step-by-step setup
+- [`docs/IMPLEMENTATION_PLAN.md`](./docs/IMPLEMENTATION_PLAN.md): architecture decisions and roadmap
+- [`docs/PRODUCTION_CHECKLIST.md`](./docs/PRODUCTION_CHECKLIST.md): what's done and what's left
 
 ---
 

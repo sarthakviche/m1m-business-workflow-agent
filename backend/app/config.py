@@ -116,8 +116,35 @@ class Settings(BaseSettings):
     db_name: str = "m1m_local"
     db_user: str = "postgres"
     db_password: str = "postgres"
-    env: str = "development"
+    # Fails closed: only an explicit ENV=development turns on the no-auth dev tenant.
+    env: str = "production"
     sprint_tenant_id: str = ""
+    # SQL logging prints customer data, so it is opt-in even in development.
+    sql_echo: bool = False
+    # Kept small: the Supabase free tier allows few connections.
+    db_pool_size: int = 3
+    db_max_overflow: int = 2
+    log_level: str = "INFO"
+    sentry_dsn: Optional[str] = None
+    rate_limit_enabled: bool = True
+
+    # ── Shared Gemini limit (calls per UTC day) ───────────────────────────────
+    ai_daily_limit_per_business: int = 50
+    ai_daily_limit_total: int = 200
+
+    # ── Web app origins allowed by CORS (comma-separated) ─────────────────────
+    cors_origins: str = (
+        "http://localhost:5173,http://127.0.0.1:5173,"
+        "http://localhost:4173,http://127.0.0.1:4173,"
+        "http://localhost:5174,http://127.0.0.1:5174"
+    )
+
+    # ── User auth (Supabase Auth) ─────────────────────────────────────────────
+    # SUPABASE_URL enables verifying asymmetric tokens against the project's JWKS.
+    # SUPABASE_JWT_SECRET is only for projects on the legacy HS256 signing key.
+    supabase_url: Optional[str] = None
+    supabase_jwt_secret: Optional[str] = None
+    supabase_jwt_audience: str = "authenticated"
 
     # ── Gemini AI (Sprint 1 Step 2+) ──────────────────────────────────────────
     # Set GEMINI_API_KEY in your .env file.  Never hardcode or log this value.
@@ -142,6 +169,30 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    @property
+    def is_development(self) -> bool:
+        return self.env == "development"
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [origin.strip().rstrip("/") for origin in self.cors_origins.split(",") if origin.strip()]
+
+    def production_config_problems(self) -> list[str]:
+        """Settings that make a non-development deployment unsafe. Values are never included."""
+        if self.is_development:
+            return []
+        problems: list[str] = []
+        if not (self.database_url or "").strip() or self.async_database_url.startswith("sqlite"):
+            problems.append("DATABASE_URL must point to PostgreSQL")
+        if not (self.supabase_url or "").strip() and not (self.supabase_jwt_secret or "").strip():
+            problems.append("SUPABASE_URL or SUPABASE_JWT_SECRET is required to verify logins")
+        origins = self.cors_origin_list
+        if "*" in origins or not any(o.startswith("https://") for o in origins):
+            problems.append("CORS_ORIGINS must list the web app's https:// origin and no wildcard")
+        if self.telegram_bot_token and not self.telegram_webhook_secret:
+            problems.append("TELEGRAM_WEBHOOK_SECRET is required when TELEGRAM_BOT_TOKEN is set")
+        return problems
 
     @property
     def async_database_url(self) -> str:
