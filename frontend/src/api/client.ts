@@ -172,6 +172,11 @@ export interface TelegramLinkCode {
   instructions: string
 }
 
+export interface BusinessBranding {
+  brand_color: string | null
+  logo_url: string | null
+}
+
 export type BusinessProfileUpdate = Partial<Pick<BusinessProfile, 'business_name' | 'gstin' | 'state' | 'address'>>
 
 export interface ImportPreviewRow {
@@ -286,6 +291,15 @@ export const api = {
     request<BusinessProfile>('/api/v1/business', { method: 'POST', body: JSON.stringify(details) }),
   updateBusiness: (changes: BusinessProfileUpdate) =>
     request<BusinessProfile>('/api/v1/business', { method: 'PATCH', body: JSON.stringify(changes) }),
+  businessBranding: () => request<BusinessBranding>('/api/v1/business/branding'),
+  updateBusinessBranding: (brandColor: string | null) =>
+    request<BusinessBranding>('/api/v1/business/branding', { method: 'PATCH', body: JSON.stringify({ brand_color: brandColor }) }),
+  uploadBusinessLogo: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return request<BusinessBranding>('/api/v1/business/logo', { method: 'POST', body: form })
+  },
+  businessLogo: async () => (await send('/api/v1/business/logo')).blob(),
   completeOnboarding: () => request<BusinessProfile>('/api/v1/business/complete-onboarding', { method: 'POST' }),
   dashboard: () => request<DashboardSummary>('/api/v1/dashboard/summary'),
   customers: () => request<Customer[]>('/api/v1/customers'),

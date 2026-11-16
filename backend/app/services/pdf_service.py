@@ -22,8 +22,10 @@ Renderer chain (first that works wins):
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -47,6 +49,9 @@ from app.services.number_format import amount_in_words, format_inr, format_quant
 logger = logging.getLogger(__name__)
 
 _RENDER_SLOTS = threading.Semaphore(2)
+_LOGO_DOC_TYPE = "business_assets"
+_LOGO_FILENAME = "logo"
+_DEFAULT_BRAND_COLOR = "#ea580c"
 
 
 class DocumentRenderError(RuntimeError):
@@ -293,6 +298,31 @@ def _date(value: datetime) -> str:
     return value.strftime("%d %b %Y")
 
 
+def _brand_context(tenant: Any) -> dict[str, str]:
+    """Return safe CSS values for an optional tenant-selected accent colour."""
+    color = getattr(tenant, "brand_color", None) or _DEFAULT_BRAND_COLOR
+    if not re.fullmatch(r"#[0-9a-fA-F]{6}", color):
+        color = _DEFAULT_BRAND_COLOR
+    red, green, blue = (int(color[index:index + 2], 16) for index in (1, 3, 5))
+    luminance = (red * 299 + green * 587 + blue * 114) / 1000
+    return {"brand_color": color, "brand_text_color": "#111827" if luminance > 186 else "#ffffff"}
+
+
+async def _logo_data_url(session: AsyncSession, tenant_id: uuid.UUID) -> Optional[str]:
+    """Load a stored PNG/JPEG logo as an inline image for a self-contained PDF."""
+    content = await session.get(DocumentFile, (tenant_id, _LOGO_DOC_TYPE, _LOGO_FILENAME))
+    if content is None:
+        return None
+    image = content.content
+    if image.startswith(b"\x89PNG\r\n\x1a\n"):
+        media_type = "image/png"
+    elif image.startswith(b"\xff\xd8\xff"):
+        media_type = "image/jpeg"
+    else:
+        return None
+    return f"data:{media_type};base64,{base64.b64encode(image).decode('ascii')}"
+
+
 # ─── Quotation ────────────────────────────────────────────────────────────────
 
 def render_quotation_html(
@@ -301,6 +331,7 @@ def render_quotation_html(
     quotation: Any,
     lines: List[Dict[str, Any]],
     issued: Optional[datetime] = None,
+    logo_data_url: Optional[str] = None,
 ) -> str:
     """Quotation with an *estimated* GST breakdown; the tax invoice is final."""
     issued = issued or datetime.now()
@@ -321,6 +352,8 @@ def render_quotation_html(
         validity_days=QUOTATION_VALIDITY_DAYS,
         date_str=_date(issued),
         valid_until_str=_date(issued + timedelta(days=QUOTATION_VALIDITY_DAYS)),
+        logo_data_url=logo_data_url,
+        **_brand_context(tenant),
     )
 
 
@@ -334,7 +367,10 @@ async def generate_quotation_pdf(
     """Render the quotation to PDF and store it in the caller's transaction. Returns its URL."""
     tenant_id_str = str(tenant.id)
 
-    rendered_html = render_quotation_html(tenant, customer, quotation, lines)
+    rendered_html = render_quotation_html(
+        tenant, customer, quotation, lines,
+        logo_data_url=await _logo_data_url(session, tenant.id),
+    )
 
     summary_lines = [
         f"Business: {tenant.business_name} (GSTIN: {tenant.gstin or 'N/A'})",
@@ -361,6 +397,7 @@ def render_invoice_html(
     lines: List[Dict[str, Any]],
     quotation_number: Optional[str] = None,
     issued: Optional[datetime] = None,
+    logo_data_url: Optional[str] = None,
 ) -> str:
     """
     Tax invoice. Per-rate rows come from tax_breakdown (same calculator that
@@ -382,6 +419,8 @@ def render_invoice_html(
         amount_words=amount_in_words(invoice.total_amount or 0),
         date_str=_date(issued),
         due_date_str=due_date.strftime("%d %b %Y") if due_date else None,
+        logo_data_url=logo_data_url,
+        **_brand_context(tenant),
     )
 
 
@@ -396,7 +435,11 @@ async def generate_invoice_pdf(
     """Render the invoice to PDF and store it in the caller's transaction. Returns its URL."""
     tenant_id_str = str(tenant.id)
 
-    rendered_html = render_invoice_html(tenant, customer, invoice, lines, quotation_number=quotation_number)
+    rendered_html = render_invoice_html(
+        tenant, customer, invoice, lines,
+        quotation_number=quotation_number,
+        logo_data_url=await _logo_data_url(session, tenant.id),
+    )
 
     summary_lines = [
         f"Business: {tenant.business_name} (GSTIN: {tenant.gstin or 'N/A'})",
