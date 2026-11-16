@@ -1,0 +1,11 @@
+{
+  "source": "http://localhost:5174/dashboard",
+  "finalURL": "http://localhost:5174/documents",
+  "capturedAt": "2026-11-02T21:00:22.615Z",
+  "scale": 2,
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "elements": []
+}

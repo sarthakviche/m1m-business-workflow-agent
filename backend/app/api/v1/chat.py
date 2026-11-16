@@ -8,17 +8,29 @@ POST /api/v1/chat
 
 from __future__ import annotations
 
+import asyncio
+import json
+import logging
 import uuid
 from typing import Any, Dict, List, Optional, Literal
 from fastapi import APIRouter, Depends
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.session import get_db_session
+from app.db.session import AsyncSessionLocal, get_db_session
 from app.auth.dependencies import get_request_context
 from app.orchestrator.context import RequestContext
 from app.orchestrator.message import NormalizedMessage
-from app.orchestrator.orchestrator import get_orchestrator
+from app.orchestrator.orchestrator import OrchestratorResult, get_orchestrator
+
+logger = logging.getLogger(__name__)
+
+# Backstop for a whole turn. AI calls already stop at GEMINI_TIMEOUT_S and fall
+# back to rules, so this only fires on something unexpected (a hung database).
+# It stays under the ~30s proxy limits of free hosting, so the user sees a
+# clear message instead of a bare 502.
+TURN_TIMEOUT_S = 25.0
 
 router = APIRouter(tags=["chat"])
 
@@ -47,36 +59,34 @@ class ChatResponse(BaseModel):
     error_code: Optional[str] = None
 
 
-@router.post("/chat", response_model=ChatResponse)
-async def chat_endpoint(
-    request: ChatRequest,
-    context: RequestContext = Depends(get_request_context),
-    session: AsyncSession = Depends(get_db_session),
-) -> ChatResponse:
-    """
-    Handle natural language quotation, invoice, and conversion requests
-    via the unified MunimOrchestrator.
-    """
-    # 1. Normalize the inbound message from the web channel
+async def _run_turn(request: ChatRequest, context: RequestContext, session: AsyncSession, on_progress=None) -> ChatResponse:
     history_dicts = [{"role": m.role, "content": m.content} for m in request.conversation_history]
     message = NormalizedMessage.from_web(
         message=request.message,
         conversation_history=history_dicts,
         idempotency_key=context.idempotency_key,
     )
+    try:
+        result = await asyncio.wait_for(
+            get_orchestrator().process(message, context, session, on_progress=on_progress),
+            timeout=TURN_TIMEOUT_S,
+        )
+    except asyncio.TimeoutError:
+        logger.error("chat.turn_timeout", extra={"run_id": str(context.run_id)})
+        result = OrchestratorResult(
+            response_text="That took longer than expected, so I stopped. Nothing was saved. Please send it again.",
+            run_id=context.run_id,
+            success=False,
+            error_code="timeout",
+        )
 
-    # 2. Process through the central orchestrator
-    orchestrator = get_orchestrator()
-    result = await orchestrator.process(message, context, session)
-
-    # 3. Persist before responding, so a document that failed to save is never
+    # Persist before responding, so a document that failed to save is never
     # reported. A failed run is undone in full: no stock change, no half-made invoice.
     if result.success:
         await session.commit()
     else:
         await session.rollback()
 
-    # 4. Return the standard response
     return ChatResponse(
         response_text=result.response_text,
         intent=result.intent,
@@ -89,3 +99,61 @@ async def chat_endpoint(
         success=result.success,
         error_code=result.error_code,
     )
+
+
+@router.post("/chat", response_model=ChatResponse)
+async def chat_endpoint(
+    request: ChatRequest,
+    context: RequestContext = Depends(get_request_context),
+    session: AsyncSession = Depends(get_db_session),
+) -> ChatResponse:
+    """Handle quotation, invoice, conversion and catalog requests via the orchestrator."""
+    return await _run_turn(request, context, session)
+
+
+@router.post("/chat/stream")
+async def chat_stream_endpoint(
+    request: ChatRequest,
+    context: RequestContext = Depends(get_request_context),
+) -> StreamingResponse:
+    """
+    Same turn as POST /chat, streamed as newline-delimited JSON so the UI can
+    show what the agent is doing:
+
+        {"type": "status", "stage": "understanding"}
+        {"type": "status", "stage": "drafting_invoice"}
+        {"type": "result", "response": {...ChatResponse...}}
+
+    The turn owns its own database session: a request-scoped one may already
+    be closed while the body is still streaming.
+    """
+    queue: asyncio.Queue = asyncio.Queue()
+
+    async def run() -> None:
+        try:
+            async with AsyncSessionLocal() as session:
+                response = await _run_turn(request, context, session, on_progress=lambda stage: queue.put_nowait(("status", stage)))
+            queue.put_nowait(("result", response.model_dump(mode="json")))
+        except Exception:
+            logger.exception("chat.stream_failed", extra={"run_id": str(context.run_id)})
+            queue.put_nowait(("result", ChatResponse(
+                response_text="Something went wrong. Please try again.",
+                run_id=context.run_id, success=False, error_code="internal_error",
+            ).model_dump(mode="json")))
+
+    async def events():
+        task = asyncio.create_task(run())
+        try:
+            while True:
+                kind, payload = await queue.get()
+                if kind == "status":
+                    yield json.dumps({"type": "status", "stage": payload}) + "\n"
+                else:
+                    yield json.dumps({"type": "result", "response": payload}) + "\n"
+                    return
+        finally:
+            if not task.done():
+                task.cancel()
+
+    # X-Accel-Buffering stops proxies from holding the stream until it ends.
+    return StreamingResponse(events(), media_type="application/x-ndjson", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

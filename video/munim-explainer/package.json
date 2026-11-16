@@ -1,0 +1,19 @@
+{
+  "name": "launch-film",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "setup": "lvm setup",
+    "prepare": "lvm prepare",
+    "preview": "lvm preview",
+    "render": "lvm render",
+    "still": "lvm still",
+    "inspect": "lvm inspect"
+  },
+  "dependencies": {
+    "@launch-video-maker/runtime": "file:vendor/launch-video-maker-runtime-0.1.0.tgz",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  }
+}

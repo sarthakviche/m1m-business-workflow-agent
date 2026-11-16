@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Munim: quotations and GST invoices from one message</title>
+<meta name="description" content="Type the order and Munim does the paperwork. Quotations and GST invoices from one message, in English or Hinglish, with prices, GST and stock from your catalog.">
+<meta name="theme-color" content="#ffffff">
+<meta property="og:title" content="Munim: quotations and GST invoices from one message">
+<meta property="og:description" content="Type the order. Munim does the paperwork.">
+<meta property="og:type" content="website">
+<meta property="og:image" content="assets/og.jpg">
+<link rel="icon" href="assets/munim-mark.png" type="image/png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="styles.css">
+<script>
+  // Set before first paint. Without JS the page stays a plain, complete document.
+  (function (d, m, n) {
+    d.classList.add('js');
+    if (m('(prefers-reduced-motion: reduce)').matches || (n.connection && n.connection.saveData)) d.classList.add('calm');
+  })(document.documentElement, window.matchMedia.bind(window), navigator);
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<nav class="nav" id="nav" aria-label="Main">
+  <a class="brand" href="#top"><img src="assets/munim-mark.png" alt="" width="233" height="178"> Munim</a>
+  <div class="nav-actions">
+    <button class="nav-link" type="button" data-film-open>Watch demo</button>
+    <a class="pill" href="#access">Request access</a>
+  </div>
+</nav>
+
+<main id="main">
+
+  <header class="hero" id="top">
+    <h1>Type the order.<br><span>Munim</span> does the paperwork.</h1>
+    <p class="lede">Quotations and GST invoices from one message.</p>
+    <div class="cta-row">
+      <a class="btn" href="#access">Request access</a>
+      <button class="btn-text" type="button" data-film-open>Watch demo <span aria-hidden="true">›</span></button>
+    </div>
+    <div class="hero-shot" id="heroShot">
+      <img src="assets/hero.webp" alt="Munim Assistant: the message Quotation for Ramesh Traders, 10 TMT Steel Rod 12mm has become quotation Q-202611-001 for ₹580.00" width="1600" height="1027" fetchpriority="high">
+    </div>
+  </header>
+
+  <section class="study" data-study="swap" aria-label="Every order needs a quotation, a GST invoice and a PDF">
+    <div class="stage">
+      <p class="swap">
+        <span class="swap-lead">Every order needs a</span>
+        <span class="swap-win"><span class="swap-col" id="swapCol"><span>quotation.</span><span>GST invoice.</span><span>PDF.</span></span></span>
+      </p>
+    </div>
+  </section>
+
+  <section class="study scrub" data-study="quote">
+    <div class="stage">
+      <div class="scrub-frame" data-frame>
+        <picture>
+          <source media="(max-aspect-ratio: 3/2)" srcset="assets/frames/phone-a/f140.webp">
+          <img src="assets/frames/wide-a/f140.webp" alt="Munim Assistant showing a quotation built from one typed message" loading="lazy">
+        </picture>
+        <canvas data-seq="a" aria-hidden="true"></canvas>
+      </div>
+      <div class="scrub-copy" data-copy="type">
+        <h2>Type it the way you'd <em>say it.</em></h2>
+        <p>English or Hinglish. Munim turns your message into a GST-ready quotation.</p>
+      </div>
+      <div class="scrub-copy scrub-copy-low" data-copy="fill">
+        <h2>Price, HSN and GST, <em>filled in.</em></h2>
+      </div>
+      <div class="to-night" data-to-night aria-hidden="true"></div>
+    </div>
+  </section>
+
+  <section class="study night" data-study="lit">
+    <div class="stage">
+      <p class="lit" id="lit">Prices, GST and stock come from your catalog. Nothing is guessed.</p>
+    </div>
+  </section>
+
+  <section class="study night" data-study="inv">
+    <div class="stage">
+      <div class="inv">
+        <div class="inv-copy">
+          <h2>One message.<br><em>GST invoice.</em></h2>
+          <p>CGST and SGST worked out exactly, and stock updated in the same step.</p>
+        </div>
+        <div class="inv-side">
+          <div class="bubble">Convert quotation Q-202611-001 to an invoice</div>
+          <div class="card">
+            <div class="card-head"><small id="invType">Tax invoice</small><strong id="invNo">INV-202611-001 · Ramesh Traders</strong></div>
+            <hr>
+            <div class="row"><span>TMT Steel Rod 12mm<span class="row-sub">10 kg × ₹58.00 · HSN 7213</span></span><span>₹580.00</span></div>
+            <hr>
+            <div class="row"><span>Subtotal</span><span>₹580.00</span></div>
+            <div class="row tax" id="cgst"><span>CGST 9%</span><span>₹52.20</span></div>
+            <div class="row tax" id="sgst"><span>SGST 9%</span><span>₹52.20</span></div>
+            <hr>
+            <div class="row total"><span>Total</span><span id="total">₹684.40</span></div>
+          </div>
+          <div class="chip" id="stock">Stock 2,490 kg</div>
+        </div>
+      </div>
+      <div class="to-day" data-to-day aria-hidden="true"></div>
+    </div>
+  </section>
+
+  <section class="study scrub" data-study="dash">
+    <div class="stage">
+      <div class="scrub-frame" data-frame>
+        <picture>
+          <source media="(max-aspect-ratio: 3/2)" srcset="assets/frames/phone-b/f085.webp">
+          <img src="assets/frames/wide-b/f085.webp" alt="Munim dashboard with invoice INV-202611-001 at the top of Recent documents" loading="lazy">
+        </picture>
+        <canvas data-seq="b" aria-hidden="true"></canvas>
+      </div>
+      <div class="scrub-copy" data-copy="dash">
+        <h2>Every document, <em>in one place.</em></h2>
+        <p>Quotations, invoices and what's left to collect, on one dashboard.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" aria-labelledby="bentoTitle">
+    <div class="wrap">
+      <h2 class="section-title" id="bentoTitle">All of it from one message.</h2>
+      <div class="bento">
+        <article class="tile t-wide reveal">
+          <p class="eyebrow">How you ask</p>
+          <h3>English or Hinglish.</h3>
+          <p>Type it the way you'd say it. Munim turns your message into a GST-ready quotation.</p>
+        </article>
+        <article class="tile reveal">
+          <p class="eyebrow">Tax</p>
+          <p class="figure tn">9% + 9%</p>
+          <p>CGST and SGST worked out exactly, on every invoice.</p>
+        </article>
+        <article class="tile reveal">
+          <p class="eyebrow">Catalog</p>
+          <p class="figure tn">₹58.00</p>
+          <p>Prices and HSN codes come from your catalog. Nothing is guessed.</p>
+        </article>
+        <article class="tile reveal">
+          <p class="eyebrow">Stock</p>
+          <p class="figure tn">2,490 kg</p>
+          <p>Stock is updated in the same step as the invoice.</p>
+        </article>
+        <article class="tile reveal">
+          <p class="eyebrow">Documents</p>
+          <p class="figure">PDF</p>
+          <p>Download any quotation or invoice, ready to send.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="close" id="access" aria-labelledby="accessTitle">
+    <img class="close-mark" src="assets/munim-mark.png" alt="" width="233" height="178" loading="lazy">
+    <h2 id="accessTitle">Quotations and GST invoices from <em>one message.</em></h2>
+    <form id="accessForm" class="access" data-endpoint="https://formspree.io/f/xpppnelq" novalidate>
+      <div class="field">
+        <label for="accessEmail">Work email</label>
+        <input id="accessEmail" name="email" type="email" autocomplete="email" inputmode="email" required aria-describedby="accessStatus">
+      </div>
+      <div class="field">
+        <label for="accessBusiness">Business name <span>(optional)</span></label>
+        <input id="accessBusiness" name="business" type="text" autocomplete="organization">
+      </div>
+      <button class="btn" type="submit">Request access</button>
+      <p class="status" id="accessStatus" role="status"></p>
+    </form>
+    <p class="fine">We only use your email to reply about access.</p>
+  </section>
+
+</main>
+
+<footer class="foot">
+  <p><strong>Munim.ai</strong></p>
+  <p>Businesses, prices and amounts shown on this page are sample data.</p>
+</footer>
+
+<dialog class="film" id="filmDialog" aria-label="Munim demo">
+  <button class="film-close" type="button" id="filmClose">Close</button>
+  <video id="filmVideo" controls playsinline preload="none" poster="assets/film-poster.webp" src="assets/munim-demo.mp4"></video>
+</dialog>
+
+<script src="main.js"></script>
+</body>
+</html>

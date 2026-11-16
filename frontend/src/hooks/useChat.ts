@@ -6,7 +6,7 @@
 
 import { useCallback, useRef, useState } from 'react'
 import { api } from '../api/client'
-import type { ChatTurn } from '../api/client'
+import type { ChatStage, ChatTurn } from '../api/client'
 import type { ChatMessage } from '../types/chat'
 
 function newId(): string {
@@ -16,6 +16,8 @@ function newId(): string {
 export function useChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [isLoading, setIsLoading] = useState(false)
+  // What the agent is doing right now, for the loader; null when idle.
+  const [stage, setStage] = useState<ChatStage | null>(null)
   const conversationId = useRef(newId())
   // Mirror of `messages` so sendMessage always builds history from the latest turns.
   const messagesRef = useRef<ChatMessage[]>([])
@@ -34,9 +36,10 @@ export function useChat() {
       .map((m) => ({ role: m.role, content: m.text }))
     append({ id: newId(), role: 'user', text: trimmed, timestamp: new Date() })
     setIsLoading(true)
+    setStage('sending')
 
     try {
-      const response = await api.chat(trimmed, history, conversationId.current)
+      const response = await api.chatStream(trimmed, history, conversationId.current, setStage)
       append({
         id: newId(),
         role: 'assistant',
@@ -56,6 +59,7 @@ export function useChat() {
       })
     } finally {
       setIsLoading(false)
+      setStage(null)
     }
   }, [append])
 
@@ -65,5 +69,5 @@ export function useChat() {
     setMessages([])
   }, [])
 
-  return { messages, isLoading, sendMessage, reset }
+  return { messages, isLoading, stage, sendMessage, reset }
 }

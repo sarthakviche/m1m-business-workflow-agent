@@ -50,9 +50,17 @@ async function send(path: string, init: RequestInit = {}): Promise<Response> {
   if (!response.ok) {
     handleUnauthorized(response.status)
     const body = await response.json().catch(() => null)
-    throw new ApiError(response.status, errorMessage(body) ?? `Request failed (${response.status})`)
+    throw new ApiError(response.status, errorMessage(body) ?? friendlyStatus(response.status))
   }
   return response
+}
+
+/** Gateway errors come from the host, not Munim: the server is restarting, waking up or overloaded. */
+function friendlyStatus(status: number): string {
+  if (status === 502 || status === 503 || status === 504) {
+    return "Munim's server didn't answer in time (it may be waking up). Nothing was saved — please send that again."
+  }
+  return `Request failed (${status})`
 }
 
 /** Munim errors carry `message`; FastAPI validation errors carry a `detail` list. */
@@ -205,6 +213,71 @@ export interface ChatTurn {
   content: string
 }
 
+/** What the agent is doing during a chat turn, as streamed by /chat/stream. */
+export type ChatStage =
+  | 'sending'
+  | 'understanding'
+  | 'drafting_quotation'
+  | 'drafting_invoice'
+  | 'converting_quotation'
+  | 'searching_catalog'
+
+// A turn normally takes 1–3s; the backend stops itself at 25s.
+const CHAT_TIMEOUT_MS = 35_000
+
+/**
+ * Sends one chat turn and reports progress through onStage. The response is
+ * newline-delimited JSON: zero or more status lines, then one result line.
+ */
+async function chatStream(
+  message: string,
+  history: ChatTurn[],
+  conversationId: string,
+  onStage: (stage: ChatStage) => void,
+): Promise<ChatResponse> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), CHAT_TIMEOUT_MS)
+  try {
+    const response = await send('/api/v1/chat/stream', {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        Accept: 'application/x-ndjson',
+        'Content-Type': 'application/json',
+        'X-Conversation-Id': conversationId,
+        'X-Idempotency-Key': crypto.randomUUID(),
+      },
+      body: JSON.stringify({ message, conversation_history: history }),
+    })
+    if (!response.body) throw new ApiError(0, 'Empty response from the server. Please try again.')
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    for (;;) {
+      const { value, done } = await reader.read()
+      buffer += decoder.decode(value, { stream: !done })
+      let newline: number
+      while ((newline = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, newline).trim()
+        buffer = buffer.slice(newline + 1)
+        if (!line) continue
+        const event = JSON.parse(line) as { type: string; stage?: ChatStage; response?: ChatResponse }
+        if (event.type === 'status' && event.stage) onStage(event.stage)
+        if (event.type === 'result' && event.response) return event.response
+      }
+      if (done) break
+    }
+    throw new ApiError(0, 'The connection closed before Munim answered. Please send that again.')
+  } catch (err) {
+    if (controller.signal.aborted) {
+      throw new ApiError(0, 'Munim is taking too long to answer. Nothing was saved — please send that again.')
+    }
+    throw err
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 // ── Endpoints ────────────────────────────────────────────────────────────────
 
 export const api = {
@@ -228,6 +301,7 @@ export const api = {
     request<ImportResult>('/api/v1/catalog/import', { method: 'POST', body: JSON.stringify({ items }) }),
   createTelegramLinkCode: () =>
     request<TelegramLinkCode>('/api/v1/telegram/link-codes', { method: 'POST' }),
+  chatStream,
   chat: (message: string, history: ChatTurn[], conversationId: string) =>
     request<ChatResponse>('/api/v1/chat', {
       method: 'POST',

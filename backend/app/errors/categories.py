@@ -128,6 +128,21 @@ class InsufficientInformationError(MunimError):
         super().__init__(detail, user_message)
 
 
+class CustomerConfirmationNeeded(InsufficientInformationError):
+    """The customer name is close to, but not the same as, an existing customer."""
+
+    def __init__(self, requested_name: str, suggested_name: str):
+        self.requested_name = requested_name
+        self.suggested_name = suggested_name
+        super().__init__(
+            detail=f"Fuzzy match pending for {requested_name}",
+            user_message=(
+                f"Did you mean **{suggested_name}**? Or is **{requested_name}** a new customer?\n\n"
+                f"Reply **yes** to use {suggested_name}, or **new** to add {requested_name}."
+            ),
+        )
+
+
 # ── Business Rules ─────────────────────────────────────────────────────────────
 
 class InventoryError(MunimError):

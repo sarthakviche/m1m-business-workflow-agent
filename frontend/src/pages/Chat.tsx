@@ -9,6 +9,7 @@ import { useApp } from '../context/AppContext'
 import { useChat } from '../hooks/useChat'
 import { formatTime } from '../lib/format'
 import type { ChatMessage } from '../types/chat'
+import type { ChatStage } from '../api/client'
 
 // Only things the backend can actually do today.
 const SUGGESTIONS = [
@@ -79,17 +80,36 @@ function Welcome({ businessName, onPick }: { businessName: string; onPick: (prom
   )
 }
 
-function Typing(): ReactNode {
+const STAGE_LABELS: Record<ChatStage, string> = {
+  sending: 'Thinking…',
+  understanding: 'Reading your request…',
+  drafting_quotation: 'Drafting the quotation and PDF…',
+  drafting_invoice: 'Checking stock and drafting the invoice…',
+  converting_quotation: 'Converting the quotation to an invoice…',
+  searching_catalog: 'Looking up your catalog…',
+}
+
+/** Loader that says what the agent is doing, and reassures if a turn runs long. */
+function Typing({ stage }: { stage: ChatStage | null }): ReactNode {
+  const [slow, setSlow] = useState(false)
+  useEffect(() => {
+    const timer = setTimeout(() => setSlow(true), 8000)
+    return () => clearTimeout(timer)
+  }, [])
+  const label = STAGE_LABELS[stage ?? 'sending']
   return (
-    <div className="flex items-center gap-1.5 self-start rounded-2xl rounded-bl-md border border-slate-200 bg-white px-4 py-3 shadow-sm" aria-label="Assistant is typing">
-      {[0, 150, 300].map((d) => <span key={d} className="h-2 w-2 animate-bounce rounded-full bg-slate-300" style={{ animationDelay: `${d}ms` }} />)}
+    <div className="flex items-center gap-2.5 self-start rounded-2xl rounded-bl-md border border-slate-200 bg-white px-4 py-3 shadow-sm" role="status" aria-live="polite">
+      <span className="flex gap-1" aria-hidden>
+        {[0, 150, 300].map((d) => <span key={d} className="h-1.5 w-1.5 animate-bounce rounded-full bg-orange-400" style={{ animationDelay: `${d}ms` }} />)}
+      </span>
+      <span className="text-sm text-slate-600">{slow ? 'Still working, almost there…' : label}</span>
     </div>
   )
 }
 
 export default function Chat() {
   const { business } = useApp()
-  const { messages, isLoading, sendMessage, reset } = useChat()
+  const { messages, isLoading, stage, sendMessage, reset } = useChat()
   const location = useLocation()
   const navigate = useNavigate()
   const [draft, setDraft] = useState('')
@@ -158,7 +178,7 @@ export default function Chat() {
         ) : (
           <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 py-6">
             {messages.map((m) => <Bubble key={m.id} message={m} />)}
-            {isLoading && <Typing />}
+            {isLoading && <Typing stage={stage} />}
             <div ref={endRef} />
           </div>
         )}

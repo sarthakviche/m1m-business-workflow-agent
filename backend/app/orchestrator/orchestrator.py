@@ -39,7 +39,7 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -100,6 +100,7 @@ class MunimOrchestrator:
         message: NormalizedMessage,
         context: RequestContext,
         session: AsyncSession,
+        on_progress: Optional[Callable[[str], None]] = None,
     ) -> OrchestratorResult:
         """
         Process a normalized user message end-to-end.
@@ -169,6 +170,7 @@ class MunimOrchestrator:
                     "request_context": context,
                     "run_id": str(run_id),
                     "business_id": str(business_id),
+                    "on_progress": on_progress,
                 }
             }
 
