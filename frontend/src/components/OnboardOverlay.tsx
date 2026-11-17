@@ -1,12 +1,13 @@
 // First-run setup: confirm the business details that go on every document,
-// then add the catalog from a photo of the price list.
+// optionally connect Telegram, then add the catalog from a photo of the price list.
 
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import { GSTIN_PATTERN, INDIAN_STATES } from '../lib/gst'
-import { IconArrowRight, IconCamera, IconCheck } from './icons'
+import { IconArrowRight, IconCamera, IconCheck, IconTelegram } from './icons'
+import TelegramLinkPanel from './TelegramLinkPanel'
 import { LogoMark } from './Logo'
 import { Button } from './ui'
 
@@ -29,7 +30,8 @@ function Label({ htmlFor, children, hint }: { htmlFor: string; children: string;
 export default function OnboardOverlay({ onComplete }: Props) {
   const { business, saveBusiness } = useApp()
   const navigate = useNavigate()
-  const [step, setStep] = useState<1 | 2>(1)
+  const [step, setStep] = useState<1 | 2 | 3>(1)
+  const [telegramLinked, setTelegramLinked] = useState(false)
   const [name, setName] = useState('')
   const [gstin, setGstin] = useState('')
   const [state, setState] = useState('')
@@ -84,11 +86,10 @@ export default function OnboardOverlay({ onComplete }: Props) {
               <span className="flex h-10 w-12 items-center justify-center rounded-xl bg-white shadow-sm"><LogoMark className="h-6" /></span>
               <span className="font-display text-lg font-bold">Welcome to Munim</span>
             </div>
-            <span className="text-sm text-white/80">Step {step} of 2</span>
+            <span className="text-sm text-white/80">Step {step} of 3</span>
           </div>
-          <div className="mt-4 grid grid-cols-2 gap-1.5" aria-hidden="true">
-            <span className="h-1.5 rounded-full bg-white" />
-            <span className={`h-1.5 rounded-full ${step === 2 ? 'bg-white' : 'bg-white/30'}`} />
+          <div className="mt-4 grid grid-cols-3 gap-1.5" aria-hidden="true">
+            {[1, 2, 3].map((n) => <span key={n} className={`h-1.5 rounded-full ${step >= n ? 'bg-white' : 'bg-white/30'}`} />)}
           </div>
         </div>
 
@@ -131,6 +132,36 @@ export default function OnboardOverlay({ onComplete }: Props) {
               )}
             </div>
           </form>
+        ) : step === 2 ? (
+          <div className="flex flex-1 flex-col gap-5 px-6 py-6">
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 id="onboard-title" className="font-display text-xl font-bold text-slate-900">Connect Telegram</h2>
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">Optional</span>
+              </div>
+              <p className="mt-1 text-sm text-slate-500">
+                Send a quick message like <em>"quotation for Ramesh, 10 bags cement"</em> from your phone and get the PDF back in the chat.
+              </p>
+            </div>
+            <ul className="space-y-2 text-sm text-slate-600">
+              {['Quotations, invoices, stock and dues from Telegram', 'Same catalog and documents as the web app', 'Disconnect any time with /unlink'].map((t) => (
+                <li key={t} className="flex items-center gap-2"><IconCheck size={16} className="shrink-0 text-emerald-600" /> {t}</li>
+              ))}
+            </ul>
+            <div className="rounded-2xl border border-slate-200 p-4">
+              <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800">
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-sky-50 text-sky-600"><IconTelegram size={16} /></span>
+                Munim on Telegram
+              </div>
+              <TelegramLinkPanel onLinked={() => setTelegramLinked(true)} />
+            </div>
+            <div className="mt-auto flex flex-col gap-2 pt-2">
+              <Button onClick={() => setStep(3)} className="w-full py-3" variant={telegramLinked ? 'primary' : 'secondary'}>
+                {telegramLinked ? <>Continue <IconArrowRight size={16} /></> : 'Skip for now'}
+              </Button>
+              {!telegramLinked && <p className="text-center text-xs text-slate-400">You can connect it later in Settings.</p>}
+            </div>
+          </div>
         ) : (
           <div className="flex flex-1 flex-col gap-5 px-6 py-6">
             <div>

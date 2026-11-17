@@ -81,10 +81,10 @@ function errorMessage(body: unknown): string | null {
  * so this fetches the file and opens it in a new tab. The tab has to be opened
  * during the click, or popup blockers stop it.
  */
-export async function openDocument(pdfUrl: string): Promise<void> {
+export async function openDocument(pdfUrl: string, init?: RequestInit): Promise<void> {
   const tab = window.open('', '_blank')
   try {
-    const blob = await (await send(pdfUrl)).blob()
+    const blob = await (await send(pdfUrl, init)).blob()
     const objectUrl = URL.createObjectURL(blob)
     if (tab) {
       tab.location.href = objectUrl
@@ -170,6 +170,48 @@ export interface TelegramLinkCode {
   code: string
   expires_at: string
   instructions: string
+  bot_username: string | null
+  /** Opens the bot with the code filled in, so linking is one tap. */
+  deep_link: string | null
+}
+
+export interface TelegramStatus {
+  configured: boolean
+  bot_username: string | null
+  linked: boolean
+  chats: { display_name: string | null; linked_at: string }[]
+}
+
+export type FormatColumnKey = 'index' | 'item' | 'hsn' | 'qty' | 'unit' | 'rate' | 'gst' | 'amount'
+
+export interface QuotationFormat {
+  source_filename: string | null
+  title: string
+  party_label: string
+  date_label: string
+  valid_until_label: string
+  columns: { key: FormatColumnKey; label: string }[]
+  accent_color: string | null
+  intro_text: string | null
+  terms: string[]
+  bank_details: string[]
+  footer_text: string | null
+  signatory_label: string
+  validity_days: number | null
+  show_amount_in_words: boolean
+  show_tax_breakdown: boolean
+  placeholders: FormatPlaceholder[]
+}
+
+export interface FormatPlaceholder {
+  label: string
+  field: string
+}
+
+export interface FormatAnalysis {
+  format: QuotationFormat
+  supported_placeholders: FormatPlaceholder[]
+  unsupported_placeholders: FormatPlaceholder[]
 }
 
 export interface BusinessBranding {
@@ -315,6 +357,24 @@ export const api = {
     request<ImportResult>('/api/v1/catalog/import', { method: 'POST', body: JSON.stringify({ items }) }),
   createTelegramLinkCode: () =>
     request<TelegramLinkCode>('/api/v1/telegram/link-codes', { method: 'POST' }),
+  telegramStatus: () => request<TelegramStatus>('/api/v1/telegram/status'),
+  quotationFormat: () =>
+    request<{ analysis: FormatAnalysis | null }>('/api/v1/business/quotation-format').then((r) => r.analysis),
+  analyzeQuotationFormat: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return request<FormatAnalysis>('/api/v1/business/quotation-format/analyze', { method: 'POST', body: form })
+  },
+  saveQuotationFormat: (format: QuotationFormat) =>
+    request<FormatAnalysis>('/api/v1/business/quotation-format', { method: 'PUT', body: JSON.stringify(format) }),
+  resetQuotationFormat: () => send('/api/v1/business/quotation-format', { method: 'DELETE' }).then(() => undefined),
+  /** Opens a sample quotation PDF in the given format (or the saved one) in a new tab. */
+  previewQuotationFormat: (format: QuotationFormat | null) =>
+    openDocument('/api/v1/business/quotation-format/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(format),
+    }),
   chatStream,
   chat: (message: string, history: ChatTurn[], conversationId: string) =>
     request<ChatResponse>('/api/v1/chat', {
