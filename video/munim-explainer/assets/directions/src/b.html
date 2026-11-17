@@ -1,0 +1,46 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0}
+body{width:1920px;height:1080px;overflow:hidden;font-family:Inter,sans-serif;color:#111;background:#F6F4F1;position:relative}
+.rule{position:absolute;background:#111}
+.col{position:absolute;top:0;bottom:0;width:1px;background:rgba(17,17,17,.08)}
+.mono{font:600 18px Inter;letter-spacing:.14em;text-transform:uppercase}
+h1{position:absolute;left:96px;top:160px;font:800 128px/.98 'Plus Jakarta Sans';letter-spacing:-.05em}
+h1 span{display:block}
+h1 .o{color:#f97316}
+.k{position:absolute;left:96px;top:92px}
+.prompt{position:absolute;left:96px;top:640px;width:860px;border-top:3px solid #111;padding-top:26px}
+.prompt .q{font:600 44px/1.18 'Plus Jakarta Sans';letter-spacing:-.02em;margin-top:18px}
+.prompt .q b{background:#111;color:#F6F4F1;padding:0 10px}
+.block{position:absolute;left:1056px;top:0;width:864px;height:1080px;background:#f97316}
+.card{position:absolute;left:1152px;top:196px;width:672px;background:#fff;color:#111}
+.card .hd{padding:34px 40px;border-bottom:2px solid #111;display:flex;justify-content:space-between;align-items:baseline}
+.card .id{font:800 40px 'Plus Jakarta Sans';letter-spacing:-.02em}
+.row{padding:28px 40px;display:flex;justify-content:space-between;border-bottom:1px solid #ddd;font-size:26px}
+.row small{display:block;font-size:20px;color:#666;margin-top:8px}
+.big{padding:36px 40px 40px;display:flex;justify-content:space-between;align-items:flex-end}
+.big .v{font:800 120px/.9 'Plus Jakarta Sans';letter-spacing:-.05em}
+.foot{position:absolute;left:1152px;top:930px;color:#111;display:flex;gap:40px}
+.logo{position:absolute;right:96px;top:92px;display:flex;align-items:center;gap:14px;color:#111}
+.logo i{width:44px;height:44px;background:#111;color:#f97316;font:800 26px 'Plus Jakarta Sans';display:flex;align-items:center;justify-content:center;font-style:normal}
+.logo b{font:800 28px 'Plus Jakarta Sans'}
+.tag{position:absolute;left:96px;bottom:60px;color:#999}
+</style></head><body>
+<div class="col" style="left:96px"></div><div class="col" style="left:576px"></div>
+<div class="k mono">01 — From message to document</div>
+<h1><span>Type the order.</span><span><span class="o" style="display:inline">Munim</span> does</span><span>the paperwork.</span></h1>
+<div class="prompt"><div class="mono">You type</div>
+ <div class="q">“Quotation for <b>Ramesh Traders</b>, 10 TMT Steel Rod 12mm”</div></div>
+<div class="block"></div>
+<div class="logo"><i>M</i><b>Munim</b></div>
+<div class="card">
+ <div class="hd"><span class="id">Q-202611-001</span><span class="mono">Quotation</span></div>
+ <div class="row"><div><b>Ramesh Traders</b><small>Pune · Maharashtra</small></div></div>
+ <div class="row"><div><b>TMT Steel Rod 12mm</b><small>10 kg × ₹58.00 · HSN 7213</small></div><b>₹580.00</b></div>
+ <div class="big"><span class="mono">Subtotal</span><span class="v">₹580</span></div>
+</div>
+<div class="foot mono"><span>GST-ready</span><span>PDF in one tap</span></div>
+<div class="tag mono">Direction B · Ledger Swiss</div>
+</body></html>

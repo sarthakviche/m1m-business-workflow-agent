@@ -1,0 +1,4 @@
+{
+  "documents": [{"role": "reference", "path": "records/script.md"}],
+  "actionRanges": [{"start": 240, "end": 300}, {"start": 705, "end": 800}, {"start": 950, "end": 1000}]
+}

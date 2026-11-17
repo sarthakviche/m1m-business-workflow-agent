@@ -1,33 +1,55 @@
 """
-db/session.py — Async SQLAlchemy engine + session factory.
+Async SQLAlchemy engine and session factory.
 
-Critical: every request must call `set_tenant_context(session, tenant_id)` BEFORE
-any query executes. This sets the Postgres session parameter `app.current_tenant_id`
-which the RLS policies rely on. Sourced from the authenticated user's JWT — NEVER
-from a client-supplied header or query param.
+IMPORTANT:
+  - Schema is managed exclusively by Alembic migrations.
+  - create_all() / drop_all() are NEVER called here.
+  - SSL is enabled for Supabase (self-signed cert chain — verification disabled).
+  - SQLite and local PostgreSQL do not use SSL.
 """
-from contextlib import asynccontextmanager
-from typing import AsyncGenerator
-from uuid import UUID
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy import text
+import ssl
+from typing import Any, Dict, Optional
 
-from app.config import settings
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
+from app.config import get_settings
 
-# Engine — echo=True only in development for query logging
+_settings = get_settings()
+_db_url = _settings.async_database_url
+_is_sqlite = _db_url.startswith("sqlite+")
+_is_supabase = "supabase" in _db_url.lower()
+
+# Build connection arguments based on database type
+_connect_args: Dict[str, Any] = {}
+
+if not _is_sqlite:
+    # PostgreSQL-based databases
+    if _is_supabase:
+        # Supabase uses SSL with a self-signed certificate in the chain.
+        # We disable hostname/cert verification to connect successfully.
+        _ssl_ctx = ssl.create_default_context()
+        _ssl_ctx.check_hostname = False
+        _ssl_ctx.verify_mode = ssl.CERT_NONE
+        _connect_args["ssl"] = _ssl_ctx
+    # For local PostgreSQL, no SSL is needed
+
 engine = create_async_engine(
-    settings.database_url,
-    echo=(settings.env == "development"),
-    pool_pre_ping=True,
-    pool_size=10,
-    max_overflow=20,
+    _db_url,
+    # Off by default: SQL logs contain customer data.
+    echo=_settings.sql_echo,
+    connect_args=_connect_args,
+    pool_size=_settings.db_pool_size,
+    max_overflow=_settings.db_max_overflow,
+    pool_pre_ping=True,  # test connections before using them from the pool
 )
 
 AsyncSessionLocal = async_sessionmaker(
-    engine,
+    bind=engine,
     class_=AsyncSession,
     expire_on_commit=False,
     autocommit=False,
@@ -35,48 +57,18 @@ AsyncSessionLocal = async_sessionmaker(
 )
 
 
-class Base(DeclarativeBase):
-    """Shared declarative base for all ORM models."""
-    pass
-
-
-async def set_tenant_context(session: AsyncSession, tenant_id: UUID | str) -> None:
+async def get_db_session():
     """
-    Set the RLS context variable for the current DB session.
+    FastAPI dependency yielding one session per request.
 
-    This must be called at the start of EVERY tenant-scoped request, using the
-    tenant_id extracted from the validated JWT — not from any client input.
-
-    Uses SET LOCAL so the setting is scoped to the current transaction only.
-    """
-    await session.execute(
-        text("SET LOCAL app.current_tenant_id = :tid"),
-        {"tid": str(tenant_id)},
-    )
-
-
-@asynccontextmanager
-async def get_tenant_session(tenant_id: UUID | str) -> AsyncGenerator[AsyncSession, None]:
-    """
-    Context manager: yields an AsyncSession already scoped to the given tenant.
-    Use this in agent tools and service functions that receive tenant_id from auth.
-    """
-    async with AsyncSessionLocal() as session:
-        async with session.begin():
-            await set_tenant_context(session, tenant_id)
-            yield session
-
-
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    """
-    FastAPI dependency: yields a bare session (no RLS context set yet).
-    Caller must set RLS context via the `require_tenant` dependency before querying.
+    The commit here is only a safety net, because it can run after the response
+    is sent. Endpoints that write must commit before returning, so a failed
+    commit becomes an error response rather than a false success.
     """
     async with AsyncSessionLocal() as session:
         try:
             yield session
+            await session.commit()
         except Exception:
             await session.rollback()
             raise
-        finally:
-            await session.close()

@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Munim Mood Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<style>
+/* Layout idea: white pages, one idea per screen, a single black chapter for the invoice.
+   Single light world by choice: this board shows the site as it will look. */
+:root {
+  color-scheme: light;
+  --paper: #ffffff;
+  --mist: #f6f5f4;
+  --ink: #1c1a19;
+  --graphite: #6f6b68;
+  --night: #000000;
+  --ash: #8a8683;
+  --munim: #ea580c;
+  --munim-deep: #c2410c;
+  --munim-glow: #fb923c;
+  --line: #e6e4e2;
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", Inter, "Helvetica Neue", Arial, sans-serif;
+  --t-hero: clamp(44px, 8vw, 104px);
+  --t-head: clamp(32px, 5vw, 64px);
+  --t-sub: clamp(22px, 2.6vw, 32px);
+  --t-body: clamp(17px, 1.4vw, 21px);
+  --t-cap: 14px;
+  --gutter: max(20px, 4vw);
+  --glide: cubic-bezier(.28, .11, .32, 1);
+  --settle: cubic-bezier(.22, 1, .36, 1);
+  --tap: cubic-bezier(.25, .1, .25, 1);
+}
+* { box-sizing: border-box; }
+html { background: var(--paper); -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--font); font-size: var(--t-body); line-height: 1.47; -webkit-font-smoothing: antialiased; overflow-x: clip; }
+img, canvas { display: block; max-width: 100%; }
+img { height: auto; }
+a { color: var(--munim-deep); }
+h1, h2, h3, p { margin: 0; }
+h1, h2 { text-wrap: balance; font-weight: 600; letter-spacing: -.03em; line-height: 1.05; }
+:focus-visible { outline: 3px solid var(--munim-deep); outline-offset: 3px; border-radius: 6px; }
+.tn { font-variant-numeric: tabular-nums; }
+
+/* Glass nav */
+.nav { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 48px; padding-inline: var(--gutter); background: rgba(255,255,255,.72); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px); border-bottom: 1px solid rgba(0,0,0,.06); font-size: var(--t-cap); }
+.nav-brand { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.nav-brand img { width: 22px; height: auto; }
+.nav-links { display: flex; gap: 20px; }
+.nav-links a { color: var(--ink); text-decoration: none; padding-block: 12px; }
+.nav-links a:hover { color: var(--munim-deep); }
+.nav { transition: background .3s var(--tap), color .3s var(--tap), border-color .3s var(--tap); }
+.nav.on-night { background: rgba(22,21,20,.72); color: var(--paper); border-bottom-color: rgba(255,255,255,.1); }
+.nav.on-night .nav-links a { color: var(--paper); }
+.nav.on-night .nav-links a:hover { color: var(--munim-glow); }
+.nav.on-night :focus-visible { outline-color: var(--munim-glow); }
+
+/* Page blocks */
+.block { padding-inline: var(--gutter); padding-block: clamp(64px, 10vw, 136px); }
+.wrap { width: min(1160px, 100%); margin-inline: auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: clamp(32px, 4vw, 56px); }
+.intro { display: grid; gap: 14px; max-width: 760px; }
+.intro h2 { font-size: var(--t-head); }
+.intro p { color: var(--graphite); max-width: 62ch; }
+
+/* Hero */
+.hero { padding-inline: var(--gutter); padding-top: clamp(56px, 8vw, 104px); display: grid; grid-template-columns: minmax(0, 1fr); justify-items: center; gap: clamp(28px, 4vw, 48px); text-align: center; }
+.hero h1 { font-size: var(--t-hero); animation: rise 1.1s var(--glide) both; }
+.hero h1 span { color: var(--munim); }
+.hero p { max-width: 54ch; color: var(--graphite); animation: rise 1.1s .12s var(--glide) both; }
+.hero img { width: min(1160px, 100%); border-radius: clamp(14px, 2vw, 28px); box-shadow: 0 30px 80px rgba(120, 60, 10, .14); animation: lift 1.4s .2s var(--settle) both; }
+@keyframes rise { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
+@keyframes lift { from { opacity: 0; transform: translateY(64px) scale(.96); } to { opacity: 1; transform: none; } }
+
+/* Feel */
+.feel { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(24px, 4vw, 56px); }
+.feel div { display: grid; gap: 10px; align-content: start; }
+.feel h3 { font-size: var(--t-sub); font-weight: 600; letter-spacing: -.02em; }
+.feel p { color: var(--graphite); }
+
+/* Motion studies */
+.study { position: relative; height: var(--len); }
+.stage { position: sticky; top: 0; height: 100vh; height: 100svh; overflow: hidden; display: grid; place-items: center; }
+.study.dark .stage { background: var(--night); color: var(--paper); }
+.cap { position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 3; width: min(460px, calc(100% - 32px)); display: grid; gap: 2px; padding: 12px 16px 14px; border-radius: 14px; font-size: var(--t-cap); line-height: 1.35; background: rgba(255,255,255,.78); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px); box-shadow: 0 0 0 1px rgba(0,0,0,.06); }
+.cap b { font-weight: 600; }
+.cap span { color: var(--graphite); }
+.study.dark .cap { background: rgba(38,36,35,.78); box-shadow: 0 0 0 1px rgba(255,255,255,.1); }
+.study.dark .cap span { color: #c9c5c2; }
+.cap i { display: block; height: 2px; margin-top: 8px; background: rgba(128,128,128,.28); border-radius: 2px; overflow: hidden; }
+.cap i::after { content: ""; display: block; height: 100%; background: var(--munim); transform-origin: left; transform: scaleX(var(--p, 0)); }
+
+/* Word swap */
+.swap { font-size: var(--t-hero); font-weight: 600; letter-spacing: -.03em; line-height: 1.15; text-align: center; padding-inline: 16px; padding-bottom: 72px; }
+.swap > div:first-child { text-wrap: balance; }
+.swap-win { height: 1.15em; overflow: hidden; color: var(--munim); -webkit-mask-image: linear-gradient(transparent, #000 12%, #000 88%, transparent); mask-image: linear-gradient(transparent, #000 12%, #000 88%, transparent); }
+.swap-col { display: grid; will-change: transform; }
+
+/* Film */
+.film-box { position: relative; width: 100%; height: 100%; overflow: hidden; background: #fff4ea; will-change: transform; }
+.film-box canvas { width: 100%; height: 100%; object-fit: cover; }
+@media (max-aspect-ratio: 5/4) { .film-box { height: auto; aspect-ratio: 16 / 9; } }
+
+/* Light-up */
+.lit { width: min(1000px, 100%); padding-inline: var(--gutter); padding-bottom: 72px; font-size: var(--t-head); font-weight: 600; letter-spacing: -.025em; line-height: 1.14; text-wrap: balance; }
+.lit span { color: var(--ash); transition: color .35s var(--tap); }
+.lit span.on { color: var(--paper); }
+.lit span.on.hot { color: var(--munim-glow); }
+
+/* Invoice */
+.inv { width: min(1040px, 100%); padding-inline: var(--gutter); padding-bottom: 84px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 420px); gap: clamp(20px, 6vw, 80px); align-items: center; }
+.inv h2 { font-size: var(--t-head); }
+.inv h2 em { font-style: normal; color: var(--munim-glow); }
+.inv-side { display: grid; gap: 12px; }
+.bubble { justify-self: end; max-width: 100%; padding: 9px 15px; border-radius: 18px 18px 4px 18px; background: var(--munim-deep); color: var(--paper); font-size: 15px; line-height: 1.3; }
+.card { background: var(--paper); color: var(--ink); border-radius: 20px; padding: 20px; display: grid; gap: 12px; font-size: 15px; line-height: 1.3; }
+.card small { display: block; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--graphite); }
+.card strong { font-weight: 600; }
+.row { display: flex; justify-content: space-between; gap: 12px; font-variant-numeric: tabular-nums; }
+.row > :last-child { flex: none; }
+.row span span { color: var(--graphite); font-size: 13px; display: block; }
+.card hr { border: 0; border-top: 1px solid var(--line); margin: 0; width: 100%; }
+.row.tax { opacity: var(--o, .22); transform: translateY(calc((1 - var(--o, .22)) * 6px)); }
+.row.total { font-size: clamp(22px, 2.6vw, 28px); font-weight: 600; letter-spacing: -.02em; align-items: baseline; }
+.row.total span:last-child { color: var(--munim-deep); }
+.chip { justify-self: end; padding: 7px 13px; border-radius: 999px; background: #262423; color: #e9e6e3; font-size: 14px; font-variant-numeric: tabular-nums; }
+
+/* Bento */
+.bento { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 16px; }
+.tile { background: var(--mist); border-radius: 24px; padding: clamp(20px, 2.6vw, 32px); display: grid; gap: 18px; align-content: start; min-width: 0; }
+.tile h3 { font-size: var(--t-sub); font-weight: 600; letter-spacing: -.02em; line-height: 1.15; text-wrap: balance; }
+.tile > p { color: var(--graphite); font-size: 16px; }
+.s2 { grid-column: span 2; } .s3 { grid-column: span 3; } .s4 { grid-column: span 4; } .s6 { grid-column: span 6; }
+
+.share { display: flex; height: 56px; border-radius: 12px; overflow: hidden; box-shadow: 0 0 0 1px var(--line); }
+.share b { display: block; }
+.swatches { display: grid; gap: 0; font-size: 14px; }
+.swatch { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding-block: 9px; border-top: 1px solid var(--line); }
+.swatch:first-child { border-top: 0; }
+.swatch > i { width: 22px; height: 22px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(0,0,0,.1); }
+.swatch span { color: var(--graphite); }
+.swatch code { font: inherit; font-variant-numeric: tabular-nums; color: var(--graphite); text-align: right; }
+
+.logo-tile { align-content: space-between; background: var(--paper); box-shadow: inset 0 0 0 1px var(--line); }
+.logo-tile img { width: min(132px, 60%); margin: 16px auto; height: auto; }
+
+.spec { display: grid; }
+.spec > div { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 16px; align-items: baseline; padding-block: 14px; border-top: 1px solid var(--line); }
+.spec > div:first-child { border-top: 0; padding-top: 0; }
+.spec small { font-size: 13px; line-height: 1.35; color: var(--graphite); font-variant-numeric: tabular-nums; }
+.spec p { min-width: 0; overflow-wrap: anywhere; }
+
+.curves { display: grid; gap: 16px; }
+.curve { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 14px; align-items: center; }
+.curve svg { width: 52px; height: 52px; overflow: visible; }
+.curve svg path { fill: none; stroke: var(--munim); stroke-width: 5; stroke-linecap: round; }
+.curve svg rect { fill: none; stroke: var(--line); stroke-width: 2; }
+.curve-body { display: grid; gap: 6px; min-width: 0; font-size: 14px; line-height: 1.3; }
+.curve-body span { color: var(--graphite); }
+.track { position: relative; height: 12px; }
+.track::before { content: ""; position: absolute; inset: 5px 0; background: var(--line); border-radius: 2px; }
+.track i { position: absolute; top: 0; left: 0; width: 12px; height: 12px; border-radius: 50%; background: var(--munim); }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 10px 22px; border: 0; border-radius: 999px; font: inherit; font-size: 16px; font-weight: 500; cursor: pointer; background: var(--munim-deep); color: var(--paper); transition: background .2s var(--tap), transform .2s var(--tap); }
+.btn:hover { background: #a93a0a; }
+.btn:active { transform: scale(.97); }
+.btn.ghost { background: transparent; color: var(--munim-deep); box-shadow: inset 0 0 0 1.5px var(--munim-deep); }
+.btn.ghost:hover { background: rgba(194,65,12,.08); }
+.btns { display: flex; flex-wrap: wrap; gap: 10px; }
+
+.rules { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; font-size: 16px; line-height: 1.4; }
+.rules li { padding-top: 10px; border-top: 1px solid var(--line); }
+.rules li:first-child { border-top: 0; padding-top: 0; }
+.rules li span { color: var(--graphite); }
+
+.film-tile { background: #fff4ea; }
+.film-tile img { border-radius: 12px; width: 100%; box-shadow: 0 10px 30px rgba(120, 60, 10, .14); }
+
+/* Borrow table */
+.borrow { width: 100%; }
+.table-scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 17px; }
+th { text-align: left; font-size: var(--t-cap); font-weight: 500; color: var(--graphite); padding: 0 16px 12px 0; }
+td { padding: 16px 16px 16px 0; border-top: 1px solid var(--line); vertical-align: top; }
+td:first-child { font-weight: 600; width: 34%; min-width: 180px; }
+td:last-child { min-width: 240px; color: var(--graphite); }
+
+/* Scroll map */
+.map { display: grid; }
+.scene { display: grid; grid-template-columns: 28px 168px minmax(0, 1fr) auto; gap: clamp(14px, 2vw, 28px); align-items: center; padding-block: 16px; border-top: 1px solid var(--line); }
+.scene:first-child { border-top: 0; }
+.scene .n { color: var(--graphite); font-size: 15px; font-variant-numeric: tabular-nums; }
+.scene img, .thumb-type { width: 168px; aspect-ratio: 16 / 9; border-radius: 10px; object-fit: cover; }
+.thumb-type { background: var(--mist); display: grid; place-items: center; font-size: 15px; font-weight: 600; letter-spacing: -.02em; text-align: center; line-height: 1.1; }
+.thumb-type.black { background: var(--night); color: var(--paper); }
+.scene h3 { font-size: 19px; font-weight: 600; letter-spacing: -.01em; }
+.scene p { font-size: 15px; color: var(--graphite); line-height: 1.4; max-width: 58ch; }
+.scene .len { font-size: 14px; color: var(--graphite); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.scene.nightly .n { color: var(--munim-deep); font-weight: 600; }
+.foot { font-size: 15px; color: var(--graphite); max-width: 72ch; }
+
+/* Principles */
+.prin { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(24px, 3vw, 40px) clamp(24px, 4vw, 56px); }
+.prin div { display: grid; gap: 6px; align-content: start; }
+.prin h3 { font-size: 19px; font-weight: 600; letter-spacing: -.01em; }
+.prin p { font-size: 16px; color: var(--graphite); }
+
+/* Decisions */
+.decide { background: var(--mist); }
+.decisions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.dec { background: var(--paper); border-radius: 20px; padding: 24px; display: grid; gap: 10px; align-content: start; }
+.dec h3 { font-size: 19px; font-weight: 600; letter-spacing: -.01em; line-height: 1.25; }
+.dec p { font-size: 16px; color: var(--graphite); }
+.dec .pick { color: var(--ink); }
+.dec .pick b { color: var(--munim-deep); font-weight: 600; }
+
+@media (max-width: 860px) {
+  .feel, .prin, .decisions { grid-template-columns: minmax(0, 1fr); }
+  .s2, .s3, .s4 { grid-column: span 6; }
+  .inv { grid-template-columns: minmax(0, 1fr); padding-bottom: 108px; gap: 14px; }
+  .inv h2 { font-size: 30px; }
+  .card { padding: 16px; gap: 9px; }
+  .scene { grid-template-columns: 112px minmax(0, 1fr); align-items: start; row-gap: 4px; }
+  .scene .n { display: none; }
+  .scene img, .thumb-type { width: 112px; grid-row: span 2; }
+  .scene .len { grid-column: 2; }
+  .spec > div { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .nav-links a:not(:last-child) { display: none; }
+}
+@media (max-height: 680px) and (max-width: 860px) {
+  .inv h2 { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero h1, .hero p, .hero img { animation: none; }
+  .study { height: auto !important; }
+  .stage { position: static; height: auto; min-height: 70vh; padding-block: 64px 120px; }
+  .swap-win { height: auto; -webkit-mask-image: none; mask-image: none; }
+  .film-box { height: auto; aspect-ratio: 16 / 9; }
+  .lit span, .btn { transition: none; }
+}
+</style>
+</head>
+<body>
+
+<nav class="nav" aria-label="Mood board sections">
+  <div class="nav-brand"><img src="munim-mark.png" alt="" width="233" height="178"> Munim mood board</div>
+  <div class="nav-links">
+    <a href="#motion">Motion</a>
+    <a href="#system">Look</a>
+    <a href="#map">Scroll map</a>
+    <a href="#decide">Decisions</a>
+  </div>
+</nav>
+
+<header class="hero">
+  <h1>Type the order.<br><span>Munim</span> does the paperwork.</h1>
+  <p>This is the direction for the Munim landing page. Keep scrolling: the motion studies below are running on frames from our film.</p>
+  <img src="frames/f035.webp" alt="Munim Assistant showing quotation Q-202611-001 for Ramesh Traders, created from one typed message" width="1280" height="720">
+</header>
+
+<section class="block">
+  <div class="wrap">
+    <div class="intro">
+      <h2>Munim has no hardware. The interface is the product shot.</h2>
+      <p>Apple's pages orbit a physical object. Ours orbit one message turning into a GST invoice, so that card gets the space and light a new iPhone would get.</p>
+    </div>
+    <div class="feel">
+      <div><h3>Quiet</h3><p>White space, one idea per screen, and no decoration. Nothing competes with the document being made.</p></div>
+      <div><h3>Exact</h3><p>Real invoice details set as type: ₹684.40, HSN 7213, CGST 9%. Precision is what an accountant trusts.</p></div>
+      <div><h3>Alive</h3><p>Everything moves with your scroll and stops when you stop. You feel in control of the film.</p></div>
+    </div>
+  </div>
+</section>
+
+<div id="motion">
+
+<section class="study" data-study="swap" style="--len:260vh">
+  <div class="stage">
+    <div class="swap">
+      <div>Every order needs a</div>
+      <div class="swap-win"><div class="swap-col" id="swapCol"><div>quotation.</div><div>GST invoice.</div><div>PDF.</div></div></div>
+    </div>
+    <div class="cap"><b>Word swap</b><span>Scroll changes the word. This is the film's opening line, rebuilt as live text.</span><i></i></div>
+  </div>
+</section>
+
+<section class="study" data-study="film" style="--len:620vh">
+  <div class="stage">
+    <div class="film-box" id="filmBox">
+      <canvas id="film" width="1280" height="720" role="img" aria-label="Film footage: a typed message becomes a quotation, then a GST invoice, then a row on the dashboard. Scroll to move through it."></canvas>
+    </div>
+    <div class="cap"><b id="filmScene">The tile grows to fill the screen</b><span class="tn" id="filmTime">Scroll plays the film, forwards and backwards</span><i></i></div>
+  </div>
+</section>
+
+<section class="study dark" data-study="lit" style="--len:220vh">
+  <div class="stage">
+    <p class="lit" id="lit">Prices, GST and stock come from your catalog. Nothing is guessed.</p>
+    <div class="cap"><b>Read-along light</b><span>Words brighten as you scroll. Orange lands on the words that matter.</span><i></i></div>
+  </div>
+</section>
+
+<section class="study dark" data-study="inv" style="--len:320vh">
+  <div class="stage">
+    <div class="inv">
+      <h2>One message.<br><em>GST invoice.</em></h2>
+      <div class="inv-side">
+        <div class="bubble">Convert quotation Q-202611-001 to an invoice</div>
+        <div class="card">
+          <div><small id="invType">Quotation</small><strong class="tn" id="invNo">Q-202611-001 · Ramesh Traders</strong></div>
+          <hr>
+          <div class="row"><span>TMT Steel Rod 12mm<span>10 kg × ₹58.00 · HSN 7213</span></span><span>₹580.00</span></div>
+          <hr>
+          <div class="row"><span>Subtotal</span><span>₹580.00</span></div>
+          <div class="row tax" id="cgst"><span>CGST 9%</span><span>₹52.20</span></div>
+          <div class="row tax" id="sgst"><span>SGST 9%</span><span>₹52.20</span></div>
+          <hr>
+          <div class="row total"><span>Total</span><span id="total">₹580.00</span></div>
+        </div>
+        <div class="chip" id="stock">Stock 2,500 kg</div>
+      </div>
+    </div>
+    <div class="cap"><b>Document build</b><span>Built in code, so it stays razor sharp. Example data from our test catalog.</span><i></i></div>
+  </div>
+</section>
+
+</div>
+
+<section class="block" id="system">
+  <div class="wrap">
+    <div class="intro">
+      <h2>The look.</h2>
+      <p>A small set of rules, used strictly. Keeping the system this tight is most of what makes a page feel like Apple.</p>
+    </div>
+    <div class="bento">
+
+      <div class="tile s4">
+        <h3>Orange means Munim did something.</h3>
+        <p>It marks the sent message, the total and the main button, and nothing else. Everything around it stays neutral, with a trace of warmth so the film's peach glow feels at home.</p>
+        <div class="share" role="img" aria-label="Target share of a typical screen: mostly white, some light grey, some ink, a small amount of black and a sliver of orange">
+          <b style="flex:62;background:var(--paper)"></b><b style="flex:20;background:var(--mist)"></b><b style="flex:10;background:var(--ink)"></b><b style="flex:6;background:var(--night)"></b><b style="flex:2;background:var(--munim)"></b>
+        </div>
+        <div class="swatches">
+          <div class="swatch"><i style="background:var(--paper)"></i><div>Paper <span>· page ground</span></div><code>#FFFFFF</code></div>
+          <div class="swatch"><i style="background:var(--mist)"></i><div>Mist <span>· tiles</span></div><code>#F6F5F4</code></div>
+          <div class="swatch"><i style="background:var(--ink)"></i><div>Ink <span>· text, 17.3:1 on white</span></div><code>#1C1A19</code></div>
+          <div class="swatch"><i style="background:var(--graphite)"></i><div>Graphite <span>· secondary text, 5.3:1</span></div><code>#6F6B68</code></div>
+          <div class="swatch"><i style="background:var(--munim)"></i><div>Munim 600 <span>· large type only, 3.6:1</span></div><code>#EA580C</code></div>
+          <div class="swatch"><i style="background:var(--munim-deep)"></i><div>Munim 700 <span>· buttons and small text, 5.2:1</span></div><code>#C2410C</code></div>
+          <div class="swatch"><i style="background:var(--munim-glow)"></i><div>Munim 400 <span>· orange on black, 9.3:1</span></div><code>#FB923C</code></div>
+        </div>
+      </div>
+
+      <div class="tile s2 logo-tile">
+        <h3>The real mark, used small.</h3>
+        <img src="munim-mark.png" alt="The Munim logo mark" width="233" height="178">
+        <p>Its gradient is the only gradient on the page.</p>
+      </div>
+
+      <div class="tile s6">
+        <h3>One family, five sizes.</h3>
+        <div class="spec">
+          <div><small>Display<br>104 / 600</small><p style="font-size:var(--t-hero);font-weight:600;letter-spacing:-.03em;line-height:1.05">Type the order.</p></div>
+          <div><small>Headline<br>64 / 600</small><p style="font-size:var(--t-head);font-weight:600;letter-spacing:-.025em;line-height:1.1">Every document, in one place.</p></div>
+          <div><small>Subhead<br>32 / 600</small><p style="font-size:var(--t-sub);font-weight:600;letter-spacing:-.02em;line-height:1.2">English or Hinglish.</p></div>
+          <div><small>Body<br>21 / 400</small><p>Type it the way you'd say it. Munim turns your message into a GST-ready quotation.</p></div>
+          <div><small>Figures<br>14 / 400</small><p class="tn" style="font-size:14px">Q-202611-001 · 10 kg × ₹58.00 · HSN 7213 · ₹684.40</p></div>
+        </div>
+        <p>Apple devices get SF Pro through the system font. Everyone else gets Inter, because Apple's licence doesn't let us host SF Pro for other platforms. The two are close enough that the page reads the same.</p>
+      </div>
+
+      <div class="tile s3">
+        <h3>Three speeds, plus the scroll.</h3>
+        <div class="curves" id="curves">
+          <div class="curve">
+            <svg viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" rx="8"/><path d="M0 100C28 89 32 0 100 0"/></svg>
+            <div class="curve-body"><div><b>Glide</b> <span>800 ms · headlines, tiles</span></div><div class="track"><i data-d="800" data-e="cubic-bezier(.28,.11,.32,1)"></i></div></div>
+          </div>
+          <div class="curve">
+            <svg viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" rx="8"/><path d="M0 100C22 0 36 0 100 0"/></svg>
+            <div class="curve-body"><div><b>Settle</b> <span>500 ms · cards landing</span></div><div class="track"><i data-d="500" data-e="cubic-bezier(.22,1,.36,1)"></i></div></div>
+          </div>
+          <div class="curve">
+            <svg viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" rx="8"/><path d="M0 100C25 90 25 0 100 0"/></svg>
+            <div class="curve-body"><div><b>Tap</b> <span>200 ms · buttons, hover</span></div><div class="track"><i data-d="200" data-e="cubic-bezier(.25,.1,.25,1)"></i></div></div>
+          </div>
+          <div class="curve">
+            <svg viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" rx="8"/><path d="M0 100L100 0"/></svg>
+            <div class="curve-body"><div><b>Scrub</b> <span>No clock · follows your scroll 1:1</span></div></div>
+          </div>
+        </div>
+        <div><button class="btn ghost" id="replay" type="button">Replay speeds</button></div>
+      </div>
+
+      <div class="tile s3">
+        <h3>Motion rules.</h3>
+        <ul class="rules">
+          <li>One moving subject per screen. <span>Your eye never has to choose.</span></li>
+          <li>Motion explains the product. <span>If removing it loses nothing, it goes.</span></li>
+          <li>Your scroll stays yours. <span>Native scrolling, with pinning through CSS sticky.</span></li>
+          <li>Transform and opacity only. <span>That keeps animation smooth on mid-range Android phones.</span></li>
+          <li>Reduced motion is respected. <span>Those visitors get finished frames.</span></li>
+        </ul>
+      </div>
+
+      <div class="tile s3 film-tile">
+        <h3>The film keeps its glow.</h3>
+        <img src="stills/s6.webp" alt="Film end card: the Munim logo with the line, Quotations and GST invoices from one message" width="720" height="405" loading="lazy">
+        <p style="color:var(--ink);font-size:16px">The page is white and the film is peach. A rounded tile with a soft shadow makes that edge look intentional until the film fills the screen.</p>
+      </div>
+
+      <div class="tile s3">
+        <h3>One button, always the same.</h3>
+        <p>A pill with a 44 px minimum height. One filled button per screen, and hover, press and keyboard focus all respond. Try them.</p>
+        <div class="btns"><button class="btn" type="button">Get started</button><button class="btn ghost" type="button">Watch the film</button></div>
+        <p>These labels are placeholders until the sign-up route is decided.</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<section class="block" style="padding-top:0">
+  <div class="wrap">
+    <div class="intro">
+      <h2>What we take from Apple.</h2>
+      <p>The techniques are common to <a href="https://www.apple.com/iphone/">Apple's product pages</a>. Their images and wording stay with them.</p>
+    </div>
+    <div class="table-scroll">
+      <table class="borrow">
+        <thead><tr><th scope="col">Technique</th><th scope="col">Where Munim uses it</th></tr></thead>
+        <tbody>
+          <tr><td>Video scrubbed by scroll</td><td>The Assistant film, from typed message to quotation</td></tr>
+          <tr><td>Tile that grows to fill the screen</td><td>The film's entrance, from rounded tile to full screen</td></tr>
+          <tr><td>Text that lights up as you read</td><td>The catalog line: "Nothing is guessed."</td></tr>
+          <tr><td>A black chapter on a white page</td><td>The invoice total, the single biggest moment on the page</td></tr>
+          <tr><td>Translucent nav and bento tiles</td><td>The navigation bar and the closing feature summary</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="map" style="padding-top:0">
+  <div class="wrap">
+    <div class="intro">
+      <h2>The page, scene by scene.</h2>
+      <p>Seven scenes that follow the film's one story: Vaidya Industrial Supplies quotes Ramesh Traders, converts the quote to a GST invoice, and sees it on the dashboard.</p>
+    </div>
+    <div class="map">
+      <div class="scene"><span class="n">1</span><div class="thumb-type">Type the<br>order.</div><div><h3>Hero</h3><p>Headline settles in on load, and the app tile rises from below. Readable right away, no scroll needed.</p></div><span class="len">1 screen</span></div>
+      <div class="scene"><span class="n">2</span><img src="stills/s1.webp" alt="" width="720" height="405" loading="lazy"><div><h3>Every order needs a…</h3><p>Pinned word swap: quotation, GST invoice, PDF.</p></div><span class="len">2 screens</span></div>
+      <div class="scene"><span class="n">3</span><img src="stills/s2.webp" alt="" width="720" height="405" loading="lazy"><div><h3>Type it the way you'd say it</h3><p>Tile grows to full screen. Scroll types the prompt and unfolds the quotation.</p></div><span class="len">3 screens</span></div>
+      <div class="scene"><span class="n">4</span><img src="stills/s3.webp" alt="" width="720" height="405" loading="lazy"><div><h3>Your catalog</h3><p>Camera pushes into the line item, then the read-along line: nothing is guessed.</p></div><span class="len">2 screens</span></div>
+      <div class="scene nightly"><span class="n">5</span><div class="thumb-type black">₹684.40</div><div><h3>One message. GST invoice.</h3><p>The page turns black. CGST and SGST appear, the total counts up, and stock drops from 2,500 to 2,490 kg.</p></div><span class="len">2.5 screens</span></div>
+      <div class="scene"><span class="n">6</span><img src="stills/s5.webp" alt="" width="720" height="405" loading="lazy"><div><h3>Every document, in one place</h3><p>Back to white. The invoice lands as the top row of the dashboard, then a bento of features.</p></div><span class="len">2 screens</span></div>
+      <div class="scene"><span class="n">7</span><img src="stills/s6.webp" alt="" width="720" height="405" loading="lazy"><div><h3>Close</h3><p>Logo, the line "Quotations and GST invoices from one message", and one button.</p></div><span class="len">1 screen</span></div>
+    </div>
+    <p class="foot">About 13.5 screens of scrolling. The copy stays within what the film already claims: no payment reminders, marketplace, Tally sync, e-invoicing or speed figures until you confirm they're true and ready to promise.</p>
+  </div>
+</section>
+
+<section class="block" style="padding-top:0">
+  <div class="wrap">
+    <div class="intro"><h2>Design principles we'll hold it to.</h2></div>
+    <div class="prin">
+      <div><h3>Hierarchy</h3><p>Each screen has one headline, one subject and at most one filled button.</p></div>
+      <div><h3>Legibility</h3><p>Text meets WCAG AA at 4.5:1. The brighter orange is limited to large type, which needs 3:1.</p></div>
+      <div><h3>Touch</h3><p>Targets are at least 44 px. Phones get shorter pins and a tighter crop of the film, because a full 16:9 frame is too small to read there.</p></div>
+      <div><h3>Access</h3><p>All copy is real HTML text, the page works by keyboard, and film frames carry descriptions.</p></div>
+      <div><h3>Speed</h3><p>The hero is text, so it paints first. Film frames load coarse to fine. This board's 165 frames total 4.2 MB.</p></div>
+      <div><h3>Control</h3><p>Scroll speed is never hijacked, and backwards works exactly like forwards.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="block decide" id="decide">
+  <div class="wrap">
+    <div class="intro">
+      <h2>Three decisions before I build.</h2>
+      <p>Tell me in chat, or just say "go" and I'll use my picks. The site will live in a <b>landing/</b> folder in this repo, which already holds the film source and the brand files.</p>
+    </div>
+    <div class="decisions">
+      <div class="dec">
+        <h3>Should the film lose its captions?</h3>
+        <p>The film has captions burned in, in Plus Jakarta Sans. You can see them in the study above, and they clash with SF Pro and Inter.</p>
+        <p class="pick"><b>My pick:</b> re-render text-free footage from the film's source and set all headlines as live text.</p>
+      </div>
+      <div class="dec">
+        <h3>Where does the main button go?</h3>
+        <p>The film closes on Munim.ai with no sign-up route, and I don't have a public URL for the app.</p>
+        <p class="pick"><b>My pick:</b> "Request access" with a short email form, unless you have a live sign-up link to use.</p>
+      </div>
+      <div class="dec">
+        <h3>Is the black invoice chapter right?</h3>
+        <p>It gives the page one dramatic beat and a change of rhythm. The alternative stays white from top to bottom, which is calmer and has less impact.</p>
+        <p class="pick"><b>My pick:</b> keep the black chapter, for this one scene only.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+(function () {
+  var reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var clamp = function (v) { return Math.min(1, Math.max(0, v)); };
+  var seg = function (p, a, b) { return clamp((p - a) / (b - a)); };
+  var smooth = function (t) { return t * t * (3 - 2 * t); };
+  var money = function (v) { return '₹' + v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+  var $ = function (id) { return document.getElementById(id); };
+
+  /* Read-along: split into words without touching the source text */
+  var lit = $('lit');
+  var hot = { your: 1, 'catalog.': 1 };
+  lit.innerHTML = lit.textContent.split(' ').map(function (w) {
+    return '<span' + (hot[w] ? ' class="hot"' : '') + '>' + w + '</span>';
+  }).join(' ');
+  var litWords = lit.querySelectorAll('span');
+
+  /* Film: frames load coarse to fine, and the nearest loaded frame is drawn */
+  var N = 165, frames = new Array(N), wanted = 0, drawn = -1, loadingStarted = false;
+  var canvas = $('film'), ctx = canvas.getContext('2d');
+  var src = function (i) { return 'frames/f' + String(i + 1).padStart(3, '0') + '.webp'; };
+  function drawNearest() {
+    for (var d = 0; d < N; d++) {
+      var i = wanted - d >= 0 && frames[wanted - d] ? wanted - d : (wanted + d < N && frames[wanted + d] ? wanted + d : -1);
+      if (i >= 0) { if (i !== drawn) { ctx.drawImage(frames[i], 0, 0, 1280, 720); drawn = i; } return; }
+    }
+  }
+  function loadOne(i) {
+    return new Promise(function (done) {
+      var im = new Image();
+      im.onload = function () { frames[i] = im; drawNearest(); done(); };
+      im.onerror = done;
+      im.src = src(i);
+    });
+  }
+  function startLoading() {
+    if (loadingStarted) return;
+    loadingStarted = true;
+    var order = [], seen = {};
+    [32, 16, 8, 4, 2, 1].forEach(function (step) {
+      for (var i = 0; i < N; i += step) if (!seen[i]) { seen[i] = 1; order.push(i); }
+    });
+    var worker = function () {
+      if (!order.length) return Promise.resolve();
+      return loadOne(order.shift()).then(worker);
+    };
+    for (var w = 0; w < 6; w++) worker();
+  }
+  var scenes = [[15, 'Typing the order'], [21, 'Prices come from your catalog'], [31, 'Quotation becomes a GST invoice'], [99, 'The invoice lands on the dashboard']];
+
+  var render = {
+    swap: function (p) {
+      var t = p * 2.2 - .1, whole = Math.floor(clamp(t / 2) * 2), frac = t - whole;
+      var pos = Math.min(2, whole + smooth(seg(frac, .25, .85)));
+      $('swapCol').style.transform = 'translateY(' + (-pos * 1.15) + 'em)';
+    },
+    film: function (p) {
+      var narrow = innerWidth / innerHeight < 1.25;
+      var g = smooth(seg(p, 0, .12));
+      var from = narrow ? .92 : .74;
+      var box = $('filmBox');
+      box.style.transform = 'scale(' + (from + (1 - from) * g) + ')';
+      box.style.borderRadius = (1 - g) * 28 + 'px';
+      wanted = Math.round(seg(p, .1, .98) * (N - 1));
+      drawNearest();
+      var sec = 5 + wanted / 5;
+      var scene = scenes.filter(function (s) { return sec < s[0]; })[0][1];
+      $('filmScene').textContent = p < .08 ? 'The tile grows to fill the screen' : scene;
+      $('filmTime').textContent = p < .08 ? 'Scroll plays the film, forwards and backwards' : 'Film time 0:' + String(Math.floor(sec)).padStart(2, '0') + ' of 0:45, with its burned-in captions';
+    },
+    lit: function (p) {
+      var on = Math.round(seg(p, .08, .85) * litWords.length);
+      litWords.forEach(function (w, i) { w.classList.toggle('on', i < on); });
+    },
+    inv: function (p) {
+      var isInvoice = p > .14;
+      $('invType').textContent = isInvoice ? 'Tax invoice' : 'Quotation';
+      $('invNo').textContent = (isInvoice ? 'INV-202611-001' : 'Q-202611-001') + ' · Ramesh Traders';
+      $('cgst').style.setProperty('--o', .22 + .78 * seg(p, .18, .32));
+      $('sgst').style.setProperty('--o', .22 + .78 * seg(p, .3, .44));
+      $('total').textContent = money(580 + 104.4 * smooth(seg(p, .44, .74)));
+      var s = smooth(seg(p, .76, .9));
+      $('stock').textContent = 'Stock ' + Math.round(2500 - 10 * s).toLocaleString('en-IN') + ' kg';
+    }
+  };
+
+  var studies = Array.prototype.map.call(document.querySelectorAll('[data-study]'), function (el) {
+    return { el: el, name: el.dataset.study };
+  });
+
+  var nav = document.querySelector('.nav');
+  function tick() {
+    ticking = false;
+    var night = false;
+    studies.forEach(function (s) {
+      var r = s.el.getBoundingClientRect();
+      if (s.el.classList.contains('dark') && r.top <= 24 && r.bottom > 24) night = true;
+      if (r.bottom < -innerHeight || r.top > innerHeight) return;
+      var p = clamp(-r.top / (r.height - innerHeight));
+      s.el.style.setProperty('--p', p.toFixed(4));
+      render[s.name](p);
+    });
+    nav.classList.toggle('on-night', night);
+  }
+  var ticking = false;
+  function ask() { if (!ticking) { ticking = true; requestAnimationFrame(tick); } }
+
+  /* Speed demo */
+  var dots = document.querySelectorAll('#curves .track i');
+  function playSpeeds() {
+    dots.forEach(function (d) {
+      if (d.animate) d.animate([{ left: '0px' }, { left: 'calc(100% - 12px)' }], { duration: +d.dataset.d, easing: d.dataset.e, fill: 'forwards' });
+    });
+  }
+  $('replay').addEventListener('click', function () { if (!reduced) playSpeeds(); });
+
+  if (reduced) {
+    /* Finished frames, no scroll-linked motion */
+    render.lit(1); render.inv(1);
+    $('swapCol').style.transform = 'none';
+    wanted = 80; loadOne(80);
+    $('filmScene').textContent = 'Quotation becomes a GST invoice';
+    $('filmTime').textContent = 'A single frame from the film, because reduced motion is on';
+    document.querySelectorAll('.study').forEach(function (s) { s.style.setProperty('--p', 1); });
+    return;
+  }
+
+  /* Poster first, the rest when the film is close */
+  loadOne(0);
+  new IntersectionObserver(function (es, io) {
+    if (es[0].isIntersecting) { startLoading(); io.disconnect(); }
+  }, { rootMargin: '150% 0px' }).observe(canvas);
+  new IntersectionObserver(function (es, io) {
+    if (es[0].isIntersecting) { playSpeeds(); io.disconnect(); }
+  }, { threshold: .4 }).observe($('curves'));
+
+  addEventListener('scroll', ask, { passive: true });
+  addEventListener('resize', ask);
+  tick();
+})();
+</script>
+</body>
+</html>

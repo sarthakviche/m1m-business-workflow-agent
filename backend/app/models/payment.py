@@ -1,32 +1,42 @@
-"""SQLAlchemy ORM model: payment"""
+"""
+Payment model — records individual payment transactions against an invoice.
+
+An invoice may receive partial payments before being fully paid.
+The invoice's `status` field (unpaid → partially_paid → paid) is updated
+by the payment agent based on cumulative payment amounts.
+"""
+
 import uuid
-from datetime import datetime
 from decimal import Decimal
-from sqlalchemy import text, ForeignKey, CheckConstraint
-from sqlalchemy.orm import Mapped, mapped_column
+from datetime import datetime
+
+from sqlalchemy import TIMESTAMP, CheckConstraint, Numeric, Text, func
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy import Text, TIMESTAMP, Numeric
-from app.db.session import Base
+from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import ForeignKey
+
+from app.db.base import Base
 
 
 class Payment(Base):
     __tablename__ = "payment"
     __table_args__ = (
         CheckConstraint(
-            "method IS NULL OR method IN ('upi','cash','bank_transfer')",
-            name="payment_method_check",
+            "method IN ('upi','cash','bank_transfer')",
+            name="ck_payment_method",
         ),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True,
-                                          server_default=text("gen_random_uuid()"))
-    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),
-                                                  ForeignKey("tenant.id", ondelete="CASCADE"),
-                                                  nullable=False)
-    invoice_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),
-                                                   ForeignKey("invoice.id", ondelete="CASCADE"),
-                                                   nullable=False)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    invoice_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("invoice.id", ondelete="CASCADE"),
+        nullable=False,
+    )
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     method: Mapped[str | None] = mapped_column(Text, nullable=True)
-    paid_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True),
-                                               server_default=text("now()"))
+    paid_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.current_timestamp(), nullable=False
+    )

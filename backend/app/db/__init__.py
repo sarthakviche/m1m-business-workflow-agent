@@ -1,3 +1,1 @@
-"""
-db/__init__.py
-"""
+# M1M db package

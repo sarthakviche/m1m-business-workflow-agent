@@ -7,11 +7,15 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      // Proxy API calls to the FastAPI backend during development
+      // Forward API calls and PDF serving to the FastAPI backend
       '/api': {
         target: 'http://localhost:8000',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+      // PDFs only: /documents on its own is the app's Documents page.
+      '^/documents/.+': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
       },
     },
   },

@@ -1,0 +1,12 @@
+.venv
+venv
+.env
+.env.*
+*.db
+__pycache__
+*.py[cod]
+.pytest_cache
+generated_docs
+tests
+sop_tests.py
+requirements-dev*.txt

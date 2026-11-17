@@ -1,0 +1,41 @@
+{% extends "_document.html" %}
+{#
+  Quotation. Context (pdf_service.render_quotation_html): quotation,
+  valid_until_str, validity_days, plus the shared _document.html context.
+  GST is shown as an estimate; the tax invoice is final.
+#}
+
+{% block title %}Quotation {{ quotation.quotation_number }}{% endblock %}
+{% block kind %}QUOTATION{% endblock %}
+
+{% block meta_rows %}
+  <tr><td class="k">Valid until</td><td class="v">{{ valid_until_str }}</td></tr>
+{% endblock %}
+
+{% block party_label %}Quotation for{% endblock %}
+
+{% block supply_rows %}
+  <div class="row party-line"><strong>Validity</strong> {{ validity_days }} days from the date of issue</div>
+{% endblock %}
+
+{% block words_label %}Amount in words{% if tax %} (incl. estimated GST){% endif %}{% endblock %}
+
+{% block terms %}
+  <li>Prices are valid until {{ valid_until_str }}.</li>
+  <li>GST is charged as applicable at the time of invoicing.</li>
+  <li>Delivery and freight are charged at actuals unless agreed otherwise.</li>
+  <li>Supply is subject to stock availability when the order is confirmed.</li>
+{% endblock %}
+
+{% block grand_label %}{% if tax %}Estimated total{% else %}Total (excl. GST){% endif %}{% endblock %}
+
+{% block tax_note %}
+  {% if tax %}<div class="tax-note">GST is an estimate. The tax invoice is final.</div>{% endif %}
+{% endblock %}
+
+{% block thanks %}
+  Thank you for the opportunity. To confirm this order, reply with<br>
+  quotation number <strong>{{ quotation.quotation_number }}</strong>.
+{% endblock %}
+
+{% block footer_note %}Computer-generated quotation · {{ quotation.quotation_number }} · Issued {{ date_str }}{% endblock %}

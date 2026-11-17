@@ -1,0 +1,38 @@
+{% extends "_document.html" %}
+{#
+  GST tax invoice. Context (pdf_service.render_invoice_html): invoice,
+  quotation_number (when converted from a quotation), due_date_str, plus the
+  shared _document.html context. Totals come from the stored invoice record.
+#}
+
+{% block title %}Tax Invoice {{ invoice.invoice_number }}{% endblock %}
+{% block kind %}TAX INVOICE{% endblock %}
+{% block copy_note %}<div class="doc-copy">Original for recipient</div>{% endblock %}
+
+{% block meta_rows %}
+  {% if due_date_str %}<tr><td class="k">Due date</td><td class="v">{{ due_date_str }}</td></tr>{% endif %}
+  {% if quotation_number %}<tr><td class="k">Against quotation</td><td class="v">{{ quotation_number }}</td></tr>{% endif %}
+{% endblock %}
+
+{% block party_label %}Bill to{% endblock %}
+
+{% block supply_rows %}
+  <div class="row party-line"><strong>Reverse charge</strong> No</div>
+{% endblock %}
+
+{% block amount_header %}Taxable (₹){% endblock %}
+
+{% block terms %}
+  {% if due_date_str %}<li>Payment is due by {{ due_date_str }}.</li>{% endif %}
+  <li>Please mention invoice number {{ invoice.invoice_number }} with your payment.</li>
+  <li>E. &amp; O.E.</li>
+{% endblock %}
+
+{% block grand_label %}Total amount{% endblock %}
+
+{% block thanks %}
+  Thank you for your business.<br>
+  For any queries about this invoice, quote <strong>{{ invoice.invoice_number }}</strong>.
+{% endblock %}
+
+{% block footer_note %}Computer-generated tax invoice · {{ invoice.invoice_number }} · Issued {{ date_str }}{% endblock %}

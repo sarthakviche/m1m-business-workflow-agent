@@ -1,43 +1,262 @@
 """
-config.py — Application settings, loaded from environment variables via pydantic-settings.
-All secrets must be present in .env (gitignored). No defaults for sensitive values.
+M1M (Munim.ai) — Application Configuration
+=============================================
+Loads all settings from environment variables (and optionally a .env file).
+
+Security rules (non-negotiable):
+  - Database credentials are NEVER hardcoded here.
+  - Secrets come exclusively from environment variables / .env file.
+  - .env is always gitignored — never committed.
 """
+
+from __future__ import annotations
+
+from functools import lru_cache
+from pathlib import Path
+from typing import Optional
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
+
+# ─── Sprint 1 dev fallback UUID ──────────────────────────────────────────────
+# Used ONLY when SPRINT_TENANT_ID env var is not set.
+# This is a clearly fictional UUID for local development/testing.
+# NEVER use this in a real/production environment.
+SPRINT_TENANT_ID_DEFAULT = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+
+
+def _find_env_file() -> str:
+    """
+    Walk up from CWD (up to 5 levels) to find a .env file.
+    This lets the app find the .env at the workspace root regardless of
+    which directory alembic / pytest / seed.py is invoked from.
+    """
+    current = Path.cwd()
+    for _ in range(5):
+        candidate = current / ".env"
+        if candidate.exists():
+            return str(candidate)
+        current = current.parent
+    return ".env"  # pydantic-settings silently ignores a missing env_file
+
+
+def _find_workspace_root() -> Path:
+    """
+    Find the workspace root by walking up until we find .env or .git.
+    This is more reliable than using Path.cwd().
+    """
+    current = Path.cwd()
+    for _ in range(5):
+        if (current / ".env").exists() or (current / ".git").exists():
+            return current
+        current = current.parent
+    # Fallback: return current directory
+    return current
+
+
+def _normalize_db_url(url: str) -> str:
+    """
+    Normalise DATABASE_URL to use postgresql+asyncpg:// scheme.
+
+    Also handles literal bracket characters [ ] in the password portion —
+    these are not valid URL characters and must be percent-encoded before
+    SQLAlchemy's URL parser sees them, otherwise the password is truncated
+    at the bracket.
+
+    Accepts:
+      postgresql://...           (Supabase dashboard default)
+      postgres://...             (Heroku-style)
+      postgresql+asyncpg://...   (already correct — no-op)
+    """
+    url = url.strip()
+
+    # ── 1. Normalise scheme ──────────────────────────────────────────────────
+    if url.startswith("postgresql+asyncpg://") or url.startswith("postgres+asyncpg://"):
+        normalised = url
+    elif url.startswith("postgresql://"):
+        normalised = "postgresql+asyncpg://" + url[len("postgresql://"):]
+    elif url.startswith("postgres://"):
+        normalised = "postgresql+asyncpg://" + url[len("postgres://"):]
+    else:
+        return url  # return unchanged; SQLAlchemy will raise on invalid URL
+
+    # ── 2. Percent-encode literal brackets in the credentials section ────────
+    # Structure: scheme://[user[:password]@]host[:port]/database[?params]
+    # We must only encode brackets that appear BEFORE the last @ (credentials),
+    # not after it (host/path).
+    try:
+        scheme_end = normalised.index("://") + 3          # position after ://
+        at_pos = normalised.rfind("@")                    # last @ = cred/host boundary
+        if at_pos > scheme_end:
+            creds = normalised[scheme_end:at_pos]         # e.g. user:p%40ssword[extra]
+            rest = normalised[at_pos:]                    # @host:port/db
+            # Encode literal [ and ] which are reserved for IPv6 host notation
+            creds_encoded = creds.replace("[", "%5B").replace("]", "%5D")
+            normalised = normalised[:scheme_end] + creds_encoded + rest
+    except (ValueError, IndexError):
+        pass  # URL has no @ (no credentials) — leave as-is
+
+    return normalised
 
 
 class Settings(BaseSettings):
+    """
+    Application settings loaded from environment variables.
+    All secrets must come from the environment — no hardcoded values.
+    
+    Supports multiple database backends:
+      - supabase: Remote PostgreSQL (via Supabase)
+      - local_postgres: Local PostgreSQL on localhost:5432
+      - sqlite: SQLite file (local development, no external dependencies)
+    """
+
+    database_url: Optional[str] = None
+    db_environment: str = "sqlite"  # Default to SQLite for zero-config dev
+    db_host: str = "localhost"
+    db_port: int = 5432
+    db_name: str = "m1m_local"
+    db_user: str = "postgres"
+    db_password: str = "postgres"
+    # Fails closed: only an explicit ENV=development turns on the no-auth dev tenant.
+    env: str = "production"
+    sprint_tenant_id: str = ""
+    # SQL logging prints customer data, so it is opt-in even in development.
+    sql_echo: bool = False
+    # Kept small: the Supabase free tier allows few connections.
+    db_pool_size: int = 3
+    db_max_overflow: int = 2
+    log_level: str = "INFO"
+    sentry_dsn: Optional[str] = None
+    rate_limit_enabled: bool = True
+
+    # ── Shared Gemini limit (calls per UTC day) ───────────────────────────────
+    ai_daily_limit_per_business: int = 50
+    ai_daily_limit_total: int = 200
+
+    # ── Web app origins allowed by CORS (comma-separated) ─────────────────────
+    cors_origins: str = (
+        "http://localhost:5173,http://127.0.0.1:5173,"
+        "http://localhost:4173,http://127.0.0.1:4173,"
+        "http://localhost:5174,http://127.0.0.1:5174"
+    )
+
+    # ── User auth (Supabase Auth) ─────────────────────────────────────────────
+    # SUPABASE_URL enables verifying asymmetric tokens against the project's JWKS.
+    # SUPABASE_JWT_SECRET is only for projects on the legacy HS256 signing key.
+    supabase_url: Optional[str] = None
+    supabase_jwt_secret: Optional[str] = None
+    supabase_jwt_audience: str = "authenticated"
+
+    # ── Gemini AI (Sprint 1 Step 2+) ──────────────────────────────────────────
+    # Set GEMINI_API_KEY in your .env file.  Never hardcode or log this value.
+    gemini_api_key: Optional[str] = None
+
+    # ── API key auth ──────────────────────────────────────────────────────────
+    # JSON map of API key → tenant UUID, e.g. {"key-abc": "a0eebc99-..."}.
+    # Read by app.auth.tenant_resolver. Never log this value.
+    munim_api_keys: Optional[str] = None
+
+    # ── Telegram channel ──────────────────────────────────────────────────────
+    # TELEGRAM_BOT_TOKEN comes from @BotFather. Never hardcode or log it.
+    telegram_bot_token: Optional[str] = None
+    # Shared secret Telegram echoes in X-Telegram-Bot-Api-Secret-Token on every
+    # webhook call. The webhook endpoint is disabled until this is set.
+    telegram_webhook_secret: Optional[str] = None
+    telegram_api_base_url: str = "https://api.telegram.org"
+    telegram_link_code_ttl_minutes: int = 15
+
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=_find_env_file(),
         env_file_encoding="utf-8",
-        case_sensitive=False,
         extra="ignore",
     )
 
-    # --- Database ---
-    database_url: str = Field(..., description="asyncpg connection string for Supabase Postgres")
-    supabase_url: str = Field(..., description="Supabase project URL")
-    supabase_service_role_key: str = Field(..., description="Supabase service-role key — NEVER expose to frontend")
+    @property
+    def is_development(self) -> bool:
+        return self.env == "development"
 
-    # --- LLM ---
-    llm_provider: str = Field(default="gemini", description="'gemini' or 'anthropic'")
-    gemini_api_key: str = Field(default="", description="Google Gemini API key")
-    anthropic_api_key: str = Field(default="", description="Anthropic API key (optional)")
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [origin.strip().rstrip("/") for origin in self.cors_origins.split(",") if origin.strip()]
 
-    # --- WhatsApp ---
-    whatsapp_cloud_api_token: str = Field(default="", description="Meta Cloud API bearer token")
-    whatsapp_phone_number_id: str = Field(default="", description="Meta Phone Number ID")
-    whatsapp_verify_token: str = Field(default="", description="Arbitrary token for webhook verification")
+    def production_config_problems(self) -> list[str]:
+        """Settings that make a non-development deployment unsafe. Values are never included."""
+        if self.is_development:
+            return []
+        problems: list[str] = []
+        if not (self.database_url or "").strip() or self.async_database_url.startswith("sqlite"):
+            problems.append("DATABASE_URL must point to PostgreSQL")
+        if not (self.supabase_url or "").strip() and not (self.supabase_jwt_secret or "").strip():
+            problems.append("SUPABASE_URL or SUPABASE_JWT_SECRET is required to verify logins")
+        origins = self.cors_origin_list
+        if "*" in origins or not any(o.startswith("https://") for o in origins):
+            problems.append("CORS_ORIGINS must list the web app's https:// origin and no wildcard")
+        if self.telegram_bot_token and not self.telegram_webhook_secret:
+            problems.append("TELEGRAM_WEBHOOK_SECRET is required when TELEGRAM_BOT_TOKEN is set")
+        return problems
 
-    # --- Auth ---
-    jwt_secret: str = Field(..., description="HS256 JWT signing secret — generate with secrets.token_hex(32)")
-    jwt_algorithm: str = Field(default="HS256")
-    jwt_expire_minutes: int = Field(default=60 * 24 * 7, description="7 days default")
-    otp_provider: str = Field(default="whatsapp", description="OTP delivery method")
+    @property
+    def async_database_url(self) -> str:
+        """
+        Resolves the final database URL based on DB_ENVIRONMENT setting.
+        
+        Priority:
+          1. If DATABASE_URL is explicitly set → use it (backward compatibility)
+          2. If DB_ENVIRONMENT is set → generate URL from config
+          3. Default → SQLite (zero-config development)
+        """
+        # Backward compatibility: if DATABASE_URL is explicitly set, use it
+        if self.database_url and self.database_url.strip():
+            return _normalize_db_url(self.database_url)
+        
+        # Generate URL based on DB_ENVIRONMENT
+        env = (self.db_environment or "").strip().lower()
+        
+        if env == "supabase":
+            # Expect DATABASE_URL to be set for Supabase
+            if self.database_url and self.database_url.strip():
+                return _normalize_db_url(self.database_url)
+            raise ValueError(
+                "DB_ENVIRONMENT=supabase requires DATABASE_URL to be set in .env"
+            )
+        
+        elif env == "local_postgres":
+            # Build PostgreSQL connection string from components
+            url = f"postgresql+asyncpg://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
+            return url
+        
+        elif env == "sqlite":
+            # SQLite connection string (file-based, local)
+            # Always store at workspace_root/m1m.db regardless of CWD
+            workspace_root = _find_workspace_root()
+            db_file = workspace_root / "m1m.db"
+            return f"sqlite+aiosqlite:///{db_file}"
+        
+        else:
+            raise ValueError(
+                f"Invalid DB_ENVIRONMENT: {env}. "
+                "Must be one of: 'supabase', 'local_postgres', 'sqlite'"
+            )
 
-    # --- Runtime ---
-    env: str = Field(default="development", description="'development' | 'production'")
+    @property
+    def effective_sprint_tenant_id(self) -> str:
+        """
+        Returns the Sprint 1 tenant UUID.
+        Uses SPRINT_TENANT_ID from the environment if set and non-empty.
+        In development mode (ENV=development), falls back to SPRINT_TENANT_ID_DEFAULT.
+        In any other environment, raises ValueError if SPRINT_TENANT_ID is not provided.
+        """
+        tid = (self.sprint_tenant_id or "").strip()
+        if tid:
+            return tid
+        if self.env == "development":
+            return SPRINT_TENANT_ID_DEFAULT
+        raise ValueError(
+            "SPRINT_TENANT_ID must be set when ENV is not 'development'. "
+            "The hardcoded demo tenant UUID is only available in development mode."
+        )
 
 
-# Singleton — import this everywhere, do not construct Settings() again per request
-settings = Settings()
+@lru_cache()
+def get_settings() -> Settings:
+    """Cached settings singleton — safe to call anywhere."""
+    return Settings()

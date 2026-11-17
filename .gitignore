@@ -1,69 +1,73 @@
-# Environment files — NEVER commit these
+# ─── Secrets (NEVER commit) ──────────────────────────────────────────────────
 .env
-.env.local
-.env.production
-.env.*.local
+.env.*
+!.env.example
+*.pem
+*.key
 
-# Python
+# ─── Local databases (contain customer data) ─────────────────────────────────
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# ─── Python ──────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
+*.pyo
+*.pyd
 .Python
-build/
-develop-eggs/
+*.egg
+*.egg-info/
 dist/
-downloads/
+build/
 eggs/
-.eggs/
-lib/
-lib64/
 parts/
-sdist/
 var/
+sdist/
 wheels/
 pip-wheel-metadata/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
+*.manifest
+*.spec
 MANIFEST
+
+# ─── Virtual environments ────────────────────────────────────────────────────
 .venv/
 venv/
 env/
 ENV/
+.env.bak
+
+# ─── Testing ─────────────────────────────────────────────────────────────────
 .pytest_cache/
-.mypy_cache/
-.ruff_cache/
-htmlcov/
 .coverage
-.coverage.*
-coverage.xml
-*.cover
-*.log
+htmlcov/
+.tox/
+.nox/
 
-# Alembic
-# (keep migrations tracked, but not local override scripts)
+# ─── Alembic ─────────────────────────────────────────────────────────────────
+# Do NOT ignore the versions/ directory itself — migrations must be committed.
+# Only ignore local Alembic artifacts.
+backend/app/db/migrations/__pycache__/
 
-# Node / Frontend
-node_modules/
-frontend/dist/
-frontend/.vite/
-frontend/build/
-.npm/
-
-# OS
+# ─── IDEs & editors ──────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
 .DS_Store
 Thumbs.db
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
+# ─── Logs & Generated Documents ──────────────────────────────────────────────
+*.log
+logs/
+backend/generated_docs/
 
-# WeasyPrint / PDF temp
-*.pdf
 
-# Uploads (never commit user uploads)
-uploads/
+# ─── Node (future frontend) ──────────────────────────────────────────────────
+node_modules/
+frontend/dist/
+frontend/.next/
+
+# Landing page deploy link
+landing/site/.vercel/

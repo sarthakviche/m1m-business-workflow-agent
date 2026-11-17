@@ -1,29 +1,55 @@
-"""SQLAlchemy ORM model: conversation_log"""
+"""
+ConversationLog model — append-only audit log of all agent interactions.
+
+Both WhatsApp and web chat messages are stored here, giving a unified
+conversation history that surfaces on both channels.
+
+The log is written to at the end of every agent graph run (log_conversation node).
+"""
+
 import uuid
 from datetime import datetime
-from sqlalchemy import text, ForeignKey, CheckConstraint
-from sqlalchemy.orm import Mapped, mapped_column
+
+from sqlalchemy import TIMESTAMP, CheckConstraint, Index, Text, func
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy import Text, TIMESTAMP
-from app.db.session import Base
+from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import ForeignKey
+
+from app.db.base import Base
 
 
 class ConversationLog(Base):
     __tablename__ = "conversation_log"
     __table_args__ = (
-        CheckConstraint("channel IN ('whatsapp','web')", name="convlog_channel_check"),
-        CheckConstraint("direction IN ('inbound','outbound')", name="convlog_direction_check"),
+        CheckConstraint(
+            "channel IN ('whatsapp','web','telegram')",
+            name="ck_convlog_channel",
+        ),
+        CheckConstraint(
+            "direction IN ('inbound','outbound')",
+            name="ck_convlog_direction",
+        ),
+        # Composite index for efficient per-tenant timeline queries
+        Index("idx_convlog_tenant_time", "tenant_id", "created_at"),
+        # Per-conversation history lookups (Telegram/WhatsApp chats)
+        Index("idx_convlog_conversation_time", "conversation_id", "created_at"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True,
-                                          server_default=text("gen_random_uuid()"))
-    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True),
-                                                  ForeignKey("tenant.id", ondelete="CASCADE"),
-                                                  nullable=False)
-    channel: Mapped[str] = mapped_column(Text, nullable=False)
-    direction: Mapped[str] = mapped_column(Text, nullable=False)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("tenant.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    # Null for rows written before conversations were tracked.
+    conversation_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    channel: Mapped[str] = mapped_column(Text, nullable=False)      # 'whatsapp' | 'web' | 'telegram'
+    direction: Mapped[str] = mapped_column(Text, nullable=False)    # 'inbound' | 'outbound'
     raw_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     detected_intent: Mapped[str | None] = mapped_column(Text, nullable=True)
     agent_invoked: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True),
-                                                  server_default=text("now()"))
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), server_default=func.current_timestamp(), nullable=False
+    )
