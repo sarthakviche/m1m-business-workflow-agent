@@ -3,7 +3,7 @@
 The target setup, and why it was chosen, is in [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md).
 
 ```
-Browser ──► Cloudflare Pages (web app)
+Browser ──► Vercel (web app, landing page)
    │
    ├──────► Supabase Auth (login)
    └──────► Render (API, Docker) ──► Supabase Postgres, Mumbai (data and PDFs)
@@ -41,15 +41,14 @@ Project URL: `https://jstfqdoefjfqfwgppmxh.supabase.co`. Publishable key: `sb_pu
 
 Migrations run at container start. **The app refuses to start if the config is unsafe**, and the log says which setting is the problem.
 
-## 3. Web app on Cloudflare Pages
+## 3. Web app on Vercel
 
-**Workers & Pages → Create → Pages → Connect to Git**
+**Add New → Project**, import this repository. [`frontend/vercel.json`](../frontend/vercel.json) sets the build, the single-page-app rewrite and the security headers. The landing page is a second Vercel project with root directory `landing/site` and no build step.
 
 | Setting | Value |
 |---|---|
 | Root directory | `frontend` |
-| Build command | `npm run build` |
-| Output directory | `dist` |
+| Production branch | The branch Render deploys |
 | `VITE_API_BASE_URL` | Your Render URL |
 | `VITE_SUPABASE_URL` | `https://jstfqdoefjfqfwgppmxh.supabase.co` |
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | The publishable key above, **never** the secret key |

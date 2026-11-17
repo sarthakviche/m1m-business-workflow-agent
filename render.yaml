@@ -1,6 +1,6 @@
 # Render Blueprint for the staging API. Secrets (sync: false) are entered in the dashboard.
 # Render deploys from the branch this Blueprint is linked to.
-# The frontend is on Cloudflare Pages: see docs/DEPLOYMENT.md.
+# The frontend is on Vercel: see docs/DEPLOYMENT.md.
 services:
   - type: web
     name: munim-api-staging
