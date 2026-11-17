@@ -93,10 +93,17 @@ class ContextBuilder:
         if missing_items:
             # If items are missing, we raise this to trigger the fallback catalog display
             from app.services.catalog_service import list_catalog_summary
-            catalog_text = await list_catalog_summary(session, business_id)
+            summary = await list_catalog_summary(session, business_id, limit=10)
+            lines = [
+                f"• **{it['name']}** — ₹{it['unit_price']:.2f}/{it['unit']} | Stock: {it['stock_available']:g} {it['unit']}"
+                for it in summary["displayed_items"]
+            ]
+            if summary["has_more"]:
+                lines.append(f"_Showing {len(lines)} of {summary['total_count']} items._")
+            catalog_text = "\n".join(lines)
             
             names = ", ".join(f"'{m}'" for m in missing_items)
-            msg = f"Item(s) {names} wasn't found in your catalog.\n\nHere is what is available:\n{catalog_text}\n\nPlease reply with the item name and quantity from the list."
+            msg = f"I couldn't find {names} in your catalog.\n\nHere is what is available:\n{catalog_text}\n\nPlease reply with the item name and quantity from the list."
             raise InsufficientInformationError(
                 detail=f"Missing items: {missing_items}",
                 user_message=msg,

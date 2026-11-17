@@ -66,6 +66,45 @@ async def lookup_item(
     if not items:
         return None
 
+    # An everyday name wins over a loose match: "coke" means Coca-Cola, not Diet Coke.
+    alias = _COMMON_ALIASES.get(norm_query)
+    found = (alias and _best_match(items, alias, alias)) or _best_match(items, raw_query, norm_query)
+    if found:
+        return found
+
+    # People say "5 cokes" for an item listed as "Coca-Cola (330 ml)": retry with
+    # plurals stripped and everyday names swapped for the catalog wording.
+    relaxed = _relax_query(norm_query)
+    if relaxed != norm_query:
+        return _best_match(items, relaxed, relaxed)
+    return None
+
+
+# Everyday names for products whose catalog name reads differently.
+_COMMON_ALIASES = {"coke": "coca cola", "coca": "coca cola"}
+
+
+def _singular(token: str) -> str:
+    if len(token) > 3 and token.endswith("s") and not token.endswith("ss"):
+        return token[:-1]
+    return token
+
+
+def _relax_query(norm_query: str) -> str:
+    relaxed = " ".join(_singular(t) for t in norm_query.split())
+    return _COMMON_ALIASES.get(relaxed, relaxed)
+
+
+def _spaced(text: str) -> str:
+    """Like normalize_item_name, but punctuation becomes a space: 'Coca-Cola' -> 'coca cola'."""
+    return " ".join(re.sub(r"[^\w\s]", " ", text).lower().split())
+
+
+def _best_match(items: list, raw_query: str, norm_query: str) -> Optional[Item]:
+    for it in items:
+        if _spaced(it.name).startswith(norm_query + " ") or _spaced(it.name) == norm_query:
+            return it
+
     # 1. Exact match (case-insensitive)
     for it in items:
         if it.name.strip().lower() == raw_query.lower():
