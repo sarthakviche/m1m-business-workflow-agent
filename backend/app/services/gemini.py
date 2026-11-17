@@ -36,18 +36,21 @@ from app.config import get_settings
 #   gemini-flash-lite-latest  ~1.2s, correct output
 #   gemini-3.6-flash          504 DEADLINE_EXCEEDED after ~19s (every attempt)
 # Override with GEMINI_MODEL without a code change if a model degrades.
-DEFAULT_MODEL = os.environ.get("GEMINI_MODEL", "gemini-flash-lite-latest")
+DEFAULT_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.1-flash-lite")
 
 # Hard ceiling for one AI call. Past this the rule-based parser answers instead,
 # so a slow or overloaded model can never stall a chat turn. The SDK's own
 # retries are disabled: a retry after a timeout only doubles the wait.
 # The API rejects deadlines under 10s.
+GEMINI_API_VERSION = os.environ.get("GEMINI_API_VERSION", "v1beta")
 GEMINI_TIMEOUT_S = max(10.0, float(os.environ.get("GEMINI_TIMEOUT_S", "10")))
 
 
 def request_options() -> types.HttpOptions:
     """HTTP options for every Gemini call: bounded timeout, no hidden retries."""
     return types.HttpOptions(
+        # Pinned: newer SDK releases default to v1, which rejects these models with a 404.
+        api_version=GEMINI_API_VERSION,
         timeout=int(GEMINI_TIMEOUT_S * 1000),
         retry_options=types.HttpRetryOptions(attempts=1),
     )
@@ -77,7 +80,7 @@ def get_gemini_client() -> genai.Client:
             "Add it to your .env file (see .env.example)."
         )
 
-    return genai.Client(api_key=api_key)
+    return genai.Client(api_key=api_key, http_options=types.HttpOptions(api_version=GEMINI_API_VERSION))
 
 
 def generate_text(
