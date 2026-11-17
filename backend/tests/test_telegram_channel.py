@@ -691,3 +691,28 @@ def test_unknown_api_key_returns_401_not_500():
                                             headers={"X-API-Key": "definitely-not-a-key"})
     assert response.status_code == 401
     assert response.json()["error_code"] == "authentication_error"
+
+
+async def test_status_reports_linked_chats_for_this_business_only(session_factory):
+    async def override_session():
+        async with session_factory() as session:
+            yield session
+            await session.commit()
+
+    fastapi_app.dependency_overrides[get_db_session] = override_session
+    try:
+        transport = httpx.ASGITransport(app=fastapi_app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as http:
+            before = (await http.get("/api/v1/telegram/status")).json()
+            code = (await http.post("/api/v1/telegram/link-codes")).json()["code"]
+            async with session_factory() as session:
+                await linking.redeem_link_code(session, code, channel="telegram", external_user_id="42",
+                                               external_chat_id="42", display_name="Asha")
+                await session.commit()
+            after = (await http.get("/api/v1/telegram/status")).json()
+    finally:
+        fastapi_app.dependency_overrides.clear()
+
+    assert before["linked"] is False and before["chats"] == []
+    assert after["linked"] is True
+    assert [c["display_name"] for c in after["chats"]] == ["Asha"]

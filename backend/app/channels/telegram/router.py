@@ -4,9 +4,10 @@ Munim.ai — Telegram HTTP endpoints
 POST /api/v1/telegram/webhook     Telegram → us. Verified by the secret token
                                   Telegram echoes in a header; acknowledged
                                   immediately, processed in the background.
-POST /api/v1/telegram/link-codes  Authenticated (X-API-Key). Issues a one-time
-                                  code that links a Telegram chat to the
-                                  caller's tenant.
+POST /api/v1/telegram/link-codes  Authenticated. Issues a one-time code that
+                                  links a Telegram chat to the caller's tenant,
+                                  with a t.me deep link that sends it in one tap.
+GET  /api/v1/telegram/status      Authenticated. Which Telegram chats are linked.
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from typing import Annotated, Any, Dict, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, Header, HTTPException
 from pydantic import BaseModel, ValidationError
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_request_context
@@ -29,6 +31,7 @@ from app.channels.telegram.handler import TelegramUpdateHandler
 from app.channels.telegram.types import TelegramUpdate
 from app.config import get_settings
 from app.db.session import AsyncSessionLocal
+from app.models.channel import ChannelIdentity
 from app.orchestrator.context import RequestContext
 
 logger = logging.getLogger(__name__)
@@ -85,6 +88,36 @@ class LinkCodeResponse(BaseModel):
     code: str
     expires_at: datetime
     instructions: str
+    bot_username: Optional[str] = None
+    # Opens the bot with the code prefilled as /start CODE, which links the chat.
+    deep_link: Optional[str] = None
+
+
+class LinkedChat(BaseModel):
+    display_name: Optional[str] = None
+    linked_at: datetime
+
+
+class TelegramStatus(BaseModel):
+    configured: bool
+    bot_username: Optional[str] = None
+    linked: bool
+    chats: list[LinkedChat]
+
+
+_bot_username: Optional[str] = None
+
+
+async def bot_username() -> Optional[str]:
+    """The bot's @username, fetched once from Telegram. None when the bot isn't configured or unreachable."""
+    global _bot_username
+    if _bot_username is None and get_settings().telegram_bot_token:
+        try:
+            me = await get_telegram_handler().client.get_me()
+            _bot_username = me.get("username") or None
+        except Exception:
+            logger.warning("telegram.get_me_failed")
+    return _bot_username
 
 
 @router.post("/link-codes", response_model=LinkCodeResponse, status_code=201)
@@ -95,8 +128,29 @@ async def create_telegram_link_code(
     ttl = timedelta(minutes=get_settings().telegram_link_code_ttl_minutes)
     issued = await create_link_code(session, context.business_id, "telegram", ttl)
     await session.commit()
+    username = await bot_username()
     return LinkCodeResponse(
         code=issued.code,
         expires_at=issued.expires_at,
         instructions=f"Open the Munim bot in Telegram and send: /link {issued.code}",
+        bot_username=username,
+        deep_link=f"https://t.me/{username}?start={issued.code}" if username else None,
+    )
+
+
+@router.get("/status", response_model=TelegramStatus)
+async def telegram_status(
+    context: RequestContext = Depends(get_request_context),
+    session: AsyncSession = Depends(get_db_session),
+) -> TelegramStatus:
+    rows = (await session.execute(
+        select(ChannelIdentity)
+        .where(ChannelIdentity.tenant_id == context.business_id, ChannelIdentity.channel == "telegram")
+        .order_by(ChannelIdentity.created_at)
+    )).scalars().all()
+    return TelegramStatus(
+        configured=bool(get_settings().telegram_bot_token),
+        bot_username=await bot_username(),
+        linked=bool(rows),
+        chats=[LinkedChat(display_name=r.display_name, linked_at=r.created_at) for r in rows],
     )

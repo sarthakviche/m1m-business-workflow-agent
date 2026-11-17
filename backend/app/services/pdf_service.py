@@ -78,6 +78,17 @@ _jinja_env.filters["qty"] = format_quantity
 
 QUOTATION_VALIDITY_DAYS = 30
 
+# Invoices keep the standard columns; their amount column is the taxable value.
+_INVOICE_COLUMNS = [
+    {"key": "index", "label": "#"},
+    {"key": "item", "label": "Item"},
+    {"key": "hsn", "label": "HSN"},
+    {"key": "qty", "label": "Qty"},
+    {"key": "rate", "label": "Rate (₹)"},
+    {"key": "gst", "label": "GST"},
+    {"key": "amount", "label": "Taxable (₹)"},
+]
+
 _PDF_URL_PREFIX = "/documents/"
 
 
@@ -298,9 +309,9 @@ def _date(value: datetime) -> str:
     return value.strftime("%d %b %Y")
 
 
-def _brand_context(tenant: Any) -> dict[str, str]:
+def _brand_context(tenant: Any, override: Optional[str] = None) -> dict[str, str]:
     """Return safe CSS values for an optional tenant-selected accent colour."""
-    color = getattr(tenant, "brand_color", None) or _DEFAULT_BRAND_COLOR
+    color = override or getattr(tenant, "brand_color", None) or _DEFAULT_BRAND_COLOR
     if not re.fullmatch(r"#[0-9a-fA-F]{6}", color):
         color = _DEFAULT_BRAND_COLOR
     red, green, blue = (int(color[index:index + 2], 16) for index in (1, 3, 5))
@@ -332,8 +343,18 @@ def render_quotation_html(
     lines: List[Dict[str, Any]],
     issued: Optional[datetime] = None,
     logo_data_url: Optional[str] = None,
+    fmt: Any = None,
 ) -> str:
-    """Quotation with an *estimated* GST breakdown; the tax invoice is final."""
+    """
+    Quotation with an *estimated* GST breakdown; the tax invoice is final.
+    fmt is the business's own QuotationFormat; None renders Munim's standard layout.
+    """
+    from app.services.quotation_format import DEFAULT_COLUMNS, load_format
+
+    if fmt is None:
+        fmt = load_format(tenant)
+    fmt_ctx = fmt.render_context() if fmt is not None else {}
+    validity_days = (fmt.validity_days if fmt is not None else None) or QUOTATION_VALIDITY_DAYS
     issued = issued or datetime.now()
     tax = tax_breakdown(tenant, customer, lines)
     subtotal = quotation.subtotal or Decimal("0")
@@ -349,11 +370,13 @@ def render_quotation_html(
         tax_total=tax["total_tax"] if tax else Decimal("0"),
         grand_total=grand_total,
         amount_words=amount_in_words(grand_total),
-        validity_days=QUOTATION_VALIDITY_DAYS,
+        validity_days=validity_days,
         date_str=_date(issued),
-        valid_until_str=_date(issued + timedelta(days=QUOTATION_VALIDITY_DAYS)),
+        valid_until_str=_date(issued + timedelta(days=validity_days)),
         logo_data_url=logo_data_url,
-        **_brand_context(tenant),
+        fmt=fmt_ctx,
+        columns=fmt_ctx.get("columns") or DEFAULT_COLUMNS,
+        **_brand_context(tenant, fmt_ctx.get("accent_color")),
     )
 
 
@@ -388,6 +411,38 @@ async def generate_quotation_pdf(
                             rendered_html, f"QUOTATION {quotation.quotation_number}", summary_lines)
 
 
+async def render_format_preview_pdf(session: AsyncSession, tenant: Any, fmt: Any) -> bytes:
+    """A sample quotation in the given format, from the business's own catalog where it has one."""
+    from types import SimpleNamespace
+
+    from app.models.item import Item
+
+    items = list((await session.execute(
+        select(Item).where(Item.tenant_id == tenant.id).order_by(Item.name).limit(3)
+    )).scalars())
+    lines: List[Dict[str, Any]] = []
+    for qty, item in zip((Decimal("10"), Decimal("4"), Decimal("2")), items):
+        lines.append({
+            "item_name": item.name, "hsn_code": item.hsn_code, "quantity": qty, "unit": item.unit,
+            "unit_price": item.unit_price, "line_total": (item.unit_price * qty).quantize(Decimal("0.01")),
+            "gst_rate_percent": item.gst_rate_percent,
+        })
+    if not lines:
+        lines = [
+            {"item_name": "Sample product", "hsn_code": "8471", "quantity": Decimal("10"), "unit": "pcs",
+             "unit_price": Decimal("250.00"), "line_total": Decimal("2500.00"), "gst_rate_percent": Decimal("18")},
+            {"item_name": "Another product", "hsn_code": "3926", "quantity": Decimal("4"), "unit": "pcs",
+             "unit_price": Decimal("120.00"), "line_total": Decimal("480.00"), "gst_rate_percent": Decimal("12")},
+        ]
+    customer = SimpleNamespace(name="Sample Customer Pvt Ltd", state=tenant.state, gstin=None,
+                               address="Customer address appears here", phone=None)
+    quotation = SimpleNamespace(quotation_number="Q-SAMPLE-001",
+                                subtotal=sum((l["line_total"] for l in lines), Decimal("0")), status="draft")
+    html = render_quotation_html(tenant, customer, quotation, lines,
+                                 logo_data_url=await _logo_data_url(session, tenant.id), fmt=fmt)
+    return await asyncio.to_thread(_render_pdf, html, "QUOTATION PREVIEW", [l["item_name"] for l in lines])
+
+
 # ─── Invoice ──────────────────────────────────────────────────────────────────
 
 def render_invoice_html(
@@ -420,6 +475,8 @@ def render_invoice_html(
         date_str=_date(issued),
         due_date_str=due_date.strftime("%d %b %Y") if due_date else None,
         logo_data_url=logo_data_url,
+        fmt={},
+        columns=_INVOICE_COLUMNS,
         **_brand_context(tenant),
     )
 

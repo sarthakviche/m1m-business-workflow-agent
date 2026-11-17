@@ -7,7 +7,9 @@
   break across pages with the item header repeated.
 
   Context: tenant, customer, lines, tax (pdf_service.tax_breakdown or None),
-  amount_words, doc_number, date_str. Child templates fill the blocks below.
+  amount_words, doc_number, date_str, columns (the item table, in order) and
+  fmt (a business's custom quotation format, or {} for the standard layout).
+  Child templates fill the blocks below.
 #}
 <html lang="en">
 <head>
@@ -134,6 +136,10 @@
     .sign .for { font-weight: 600; color: #111827; }
     .sign .line { border-top: 1px solid #9ca3af; margin-top: 34px; padding-top: 4px; color: #6b7280; font-size: 8.5px; }
 
+    .intro { margin: 16px 0 0; color: #374151; }
+    .bank { margin-top: 12px; }
+    .bank .lines { margin-top: 3px; color: #4b5563; }
+
     .footer { margin-top: 22px; padding-top: 8px; border-top: 1px solid #f0f1f3; font-size: 8px; color: #9ca3af; }
     .footer td.brand { text-align: right; }
     .footer .dot { color: {{ brand_color }}; font-weight: 800; }
@@ -171,7 +177,7 @@
         {% block copy_note %}{% endblock %}
         <div class="doc-number">{{ doc_number }}</div>
         <table class="doc-meta">
-          <tr><td class="k">Date</td><td class="v">{{ date_str }}</td></tr>
+          <tr><td class="k">{{ fmt.date_label or "Date" }}</td><td class="v">{{ date_str }}</td></tr>
           {% block meta_rows %}{% endblock %}
         </table>
       </td>
@@ -205,29 +211,33 @@
     </tr>
   </table>
 
-  <!-- Line items -->
+  {% if fmt.intro_text %}<p class="intro">{{ fmt.intro_text }}</p>{% endif %}
+
+  <!-- Line items: columns come from the business's format, or the standard set -->
   <table class="items">
     <thead>
       <tr>
-        <th class="idx">#</th>
-        <th>Item</th>
-        <th>HSN</th>
-        <th class="num">Qty</th>
-        <th class="num">Rate (₹)</th>
-        <th class="num">GST</th>
-        <th class="num">{% block amount_header %}Amount (₹){% endblock %}</th>
+        {% for c in columns %}
+          <th class="{% if c.key == 'index' %}idx{% elif c.key in ('qty', 'rate', 'gst', 'amount') %}num{% endif %}">{{ c.label }}</th>
+        {% endfor %}
       </tr>
     </thead>
     <tbody>
+      {% set unit_column = columns | selectattr('key', 'equalto', 'unit') | list %}
       {% for line in lines %}
+      {% set row = loop.index %}
       <tr>
-        <td class="idx">{{ loop.index }}</td>
-        <td><div class="item-name">{{ line.item_name }}</div></td>
-        <td class="muted">{{ line.hsn_code or '—' }}</td>
-        <td class="num">{{ line.quantity | qty }} {{ line.unit or '' }}</td>
-        <td class="num">{{ line.unit_price | inr }}</td>
-        <td class="num muted">{% if line.gst_rate_percent is not none %}{{ line.gst_rate_percent | qty }}%{% else %}—{% endif %}</td>
-        <td class="num amount">{{ line.line_total | inr }}</td>
+        {% for c in columns %}
+          {% if c.key == 'index' %}<td class="idx">{{ row }}</td>
+          {% elif c.key == 'item' %}<td><div class="item-name">{{ line.item_name }}</div></td>
+          {% elif c.key == 'hsn' %}<td class="muted">{{ line.hsn_code or '—' }}</td>
+          {% elif c.key == 'qty' %}<td class="num">{{ line.quantity | qty }}{% if not unit_column %} {{ line.unit or '' }}{% endif %}</td>
+          {% elif c.key == 'unit' %}<td>{{ line.unit or '—' }}</td>
+          {% elif c.key == 'rate' %}<td class="num">{{ line.unit_price | inr }}</td>
+          {% elif c.key == 'gst' %}<td class="num muted">{% if line.gst_rate_percent is not none %}{{ line.gst_rate_percent | qty }}%{% else %}—{% endif %}</td>
+          {% elif c.key == 'amount' %}<td class="num amount">{{ line.line_total | inr }}</td>
+          {% endif %}
+        {% endfor %}
       </tr>
       {% endfor %}
     </tbody>
@@ -237,14 +247,22 @@
   <table class="summary">
     <tr>
       <td class="left">
+        {% if fmt.show_amount_in_words is not sameas false %}
         <div class="words">
           <div class="label">{% block words_label %}Amount in words{% endblock %}</div>
           <div class="text">{{ amount_words }}</div>
         </div>
+        {% endif %}
         <div class="terms">
           <div class="label">Terms &amp; conditions</div>
           <ol>{% block terms %}{% endblock %}</ol>
         </div>
+        {% if fmt.bank_details %}
+        <div class="bank">
+          <div class="label">Bank details</div>
+          <div class="lines">{% for l in fmt.bank_details %}{{ l }}<br>{% endfor %}</div>
+        </div>
+        {% endif %}
       </td>
       <td>
         <table class="totals">
@@ -252,7 +270,9 @@
             <td class="k">Taxable value</td>
             <td class="num">₹ {{ taxable_total | inr }}</td>
           </tr>
-          {% if tax %}
+          {% if tax and fmt.show_tax_breakdown is sameas false %}
+            <tr><td class="k">GST</td><td class="num">₹ {{ tax_total | inr }}</td></tr>
+          {% elif tax %}
             {% for g in tax.groups %}
               {% if tax.inter_state %}
                 <tr><td class="k">IGST @ {{ g.rate | qty }}% <span class="sub">on ₹ {{ g.taxable | inr }}</span></td><td class="num">₹ {{ g.igst | inr }}</td></tr>
@@ -282,7 +302,7 @@
       <td class="thanks">{% block thanks %}{% endblock %}</td>
       <td class="sign">
         <div class="for">For {{ tenant.business_name }}</div>
-        <div class="line">Authorised signatory</div>
+        <div class="line">{{ fmt.signatory_label or "Authorised signatory" }}</div>
       </td>
     </tr>
   </table>

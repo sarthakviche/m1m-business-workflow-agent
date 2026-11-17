@@ -4,6 +4,13 @@ M1M (Munim.ai) — Account API
     GET  /api/v1/me         Who is signed in, and their business if they have one
     POST /api/v1/business   Create a business for a user who just signed up
 
+    Quotation format (the business's own layout, read from a sample by AI):
+    GET    /api/v1/business/quotation-format           Current format, or null for the standard one
+    POST   /api/v1/business/quotation-format/analyze   Read a sample file; returns a format, saves nothing
+    POST   /api/v1/business/quotation-format/preview   A sample quotation PDF in a given format
+    PUT    /api/v1/business/quotation-format           Save a format for all new quotations
+    DELETE /api/v1/business/quotation-format           Back to the standard layout
+
 A new login has no business, so these are the only two endpoints that don't
 go through get_request_context's business lookup.
 """
@@ -28,6 +35,14 @@ from app.models.app_user import AppUser
 from app.models.document import DocumentFile
 from app.models.tenant import Tenant
 from app.orchestrator.context import RequestContext
+from app.services import pdf_service
+from app.services.quotation_format import (
+    FormatAnalysis,
+    QuotationFormat,
+    analysis_for,
+    analyze_quotation_format,
+    load_format,
+)
 
 router = APIRouter(tags=["account"])
 
@@ -208,3 +223,73 @@ async def get_business_logo(
     if media_type is None:
         raise NotFoundError(detail="Business logo has invalid signature", user_message="No business logo has been uploaded.")
     return Response(content=logo.content, media_type=media_type)
+
+
+# ── Quotation format ─────────────────────────────────────────────────────────
+
+class QuotationFormatState(BaseModel):
+    analysis: Optional[FormatAnalysis] = None
+
+
+async def _tenant(session: AsyncSession, context: RequestContext) -> Tenant:
+    tenant = await session.get(Tenant, context.business_id)
+    if tenant is None:
+        raise NotFoundError(detail=f"Tenant {context.business_id} not found", user_message="Business not found.")
+    return tenant
+
+
+@router.get("/business/quotation-format", response_model=QuotationFormatState)
+async def get_quotation_format(
+    context: RequestContext = Depends(get_request_context),
+    session: AsyncSession = Depends(get_db_session),
+) -> QuotationFormatState:
+    fmt = load_format(await _tenant(session, context))
+    return QuotationFormatState(analysis=analysis_for(fmt) if fmt else None)
+
+
+@router.post("/business/quotation-format/analyze", response_model=FormatAnalysis)
+async def analyze_quotation_format_upload(
+    file: UploadFile = File(...),
+    context: RequestContext = Depends(get_request_context),
+    session: AsyncSession = Depends(get_db_session),
+) -> FormatAnalysis:
+    content = await file.read(10 * 1024 * 1024 + 1)
+    analysis = await analyze_quotation_format(session, context.business_id, content, file.filename or "quotation")
+    await session.commit()  # the AI quota reservation
+    return analysis
+
+
+@router.post("/business/quotation-format/preview")
+async def preview_quotation_format(
+    body: Optional[QuotationFormat] = None,
+    context: RequestContext = Depends(get_request_context),
+    session: AsyncSession = Depends(get_db_session),
+) -> Response:
+    tenant = await _tenant(session, context)
+    fmt = body or load_format(tenant)
+    pdf = await pdf_service.render_format_preview_pdf(session, tenant, fmt)
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": 'inline; filename="quotation-preview.pdf"'})
+
+
+@router.put("/business/quotation-format", response_model=FormatAnalysis)
+async def save_quotation_format(
+    body: QuotationFormat,
+    context: RequestContext = Depends(get_request_context),
+    session: AsyncSession = Depends(get_db_session),
+) -> FormatAnalysis:
+    tenant = await _tenant(session, context)
+    tenant.quotation_format = body.model_dump(mode="json")
+    await session.commit()
+    return analysis_for(body)
+
+
+@router.delete("/business/quotation-format", status_code=204)
+async def reset_quotation_format(
+    context: RequestContext = Depends(get_request_context),
+    session: AsyncSession = Depends(get_db_session),
+) -> Response:
+    tenant = await _tenant(session, context)
+    tenant.quotation_format = None
+    await session.commit()
+    return Response(status_code=204)

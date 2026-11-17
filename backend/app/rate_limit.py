@@ -19,6 +19,8 @@ _WINDOW_SECONDS = 60
 # (method or None for any, path prefix, requests per minute). The first match wins.
 RULES = (
     ("POST", "/api/v1/catalog/import/preview", 20),
+    ("POST", "/api/v1/business/quotation-format/analyze", 10),
+    ("POST", "/api/v1/business/quotation-format/preview", 20),
     ("POST", "/api/v1/chat", 60),
     ("POST", "/api/v1/business", 20),
     (None, "/api/v1/telegram/webhook", None),  # Telegram's servers, verified by a secret

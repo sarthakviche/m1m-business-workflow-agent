@@ -2,17 +2,18 @@
 {#
   Quotation. Context (pdf_service.render_quotation_html): quotation,
   valid_until_str, validity_days, plus the shared _document.html context.
+  fmt (the business's own format, or {}) replaces the standard wording.
   GST is shown as an estimate; the tax invoice is final.
 #}
 
 {% block title %}Quotation {{ quotation.quotation_number }}{% endblock %}
-{% block kind %}QUOTATION{% endblock %}
+{% block kind %}{{ fmt.title or "QUOTATION" }}{% endblock %}
 
 {% block meta_rows %}
-  <tr><td class="k">Valid until</td><td class="v">{{ valid_until_str }}</td></tr>
+  <tr><td class="k">{{ fmt.valid_until_label or "Valid until" }}</td><td class="v">{{ valid_until_str }}</td></tr>
 {% endblock %}
 
-{% block party_label %}Quotation for{% endblock %}
+{% block party_label %}{{ fmt.party_label or "Quotation for" }}{% endblock %}
 
 {% block supply_rows %}
   <div class="row party-line"><strong>Validity</strong> {{ validity_days }} days from the date of issue</div>
@@ -21,10 +22,14 @@
 {% block words_label %}Amount in words{% if tax %} (incl. estimated GST){% endif %}{% endblock %}
 
 {% block terms %}
+{% if fmt.terms %}
+  {% for t in fmt.terms %}<li>{{ t }}</li>{% endfor %}
+{% else %}
   <li>Prices are valid until {{ valid_until_str }}.</li>
   <li>GST is charged as applicable at the time of invoicing.</li>
   <li>Delivery and freight are charged at actuals unless agreed otherwise.</li>
   <li>Supply is subject to stock availability when the order is confirmed.</li>
+{% endif %}
 {% endblock %}
 
 {% block grand_label %}{% if tax %}Estimated total{% else %}Total (excl. GST){% endif %}{% endblock %}
@@ -38,4 +43,4 @@
   quotation number <strong>{{ quotation.quotation_number }}</strong>.
 {% endblock %}
 
-{% block footer_note %}Computer-generated quotation · {{ quotation.quotation_number }} · Issued {{ date_str }}{% endblock %}
+{% block footer_note %}{% if fmt.footer_text %}{{ fmt.footer_text }} · {{ quotation.quotation_number }}{% else %}Computer-generated quotation · {{ quotation.quotation_number }} · Issued {{ date_str }}{% endif %}{% endblock %}
