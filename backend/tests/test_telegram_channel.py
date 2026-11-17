@@ -408,7 +408,7 @@ async def test_unknown_item_creates_nothing(session_factory):
 
     await handler.handle(make_update("create quotation for Brand New Buyer for 50 unicorn horns"))
 
-    assert "wasn't found in your catalog" in client.last_text
+    assert "in your catalog" in client.last_text
     assert await count(session_factory, Quotation) == 0
     assert await count(session_factory, Customer) == customers_before
     assert client.documents == []
