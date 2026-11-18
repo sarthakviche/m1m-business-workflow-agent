@@ -13,6 +13,25 @@ Telegram ───────┘ webhook
 GitHub Actions ──► nightly encrypted backup of Postgres
 ```
 
+## Branches: what deploys from where
+
+| Piece | Host | Deploys from | How |
+|---|---|---|---|
+| API (`munim-api-staging`) | Render | **`staging`** | Automatically on every push to `staging` |
+| Web app (`munim-app`) | Vercel | **`main`** | Automatically on every push to `main`. Other branches and pull requests get preview URLs only |
+| Landing page (`munim-landing`) | Vercel | Not linked to Git | By hand: `npx vercel deploy landing/site --prod` |
+| Nightly database backup | GitHub Actions | **`main`** | Scheduled runs only start from the default branch |
+
+`main` is protected: changes reach it only through a pull request. Keep `main` and `staging` on the same commit:
+
+1. Push your work to `staging`. Render redeploys the API.
+2. Open a pull request from `staging` into `main` and merge it once CI passes. Vercel redeploys the web app.
+3. If the merge commit isn't on `staging` yet, fast-forward `staging` to `main` (`git push origin origin/main:staging`).
+
+The API ships first, so a new endpoint is live before the web app that calls it. A database migration runs when the API container starts.
+
+Live URLs: API `https://munim-api-staging.onrender.com`, web app `https://munim-app-two.vercel.app`, landing page `https://munim-landing.vercel.app`.
+
 ## 1. Supabase
 
 The `m1m-mvp` project (`jstfqdoefjfqfwgppmxh`, Mumbai) is active, with the schema applied and every table locked down.
@@ -26,7 +45,7 @@ Project URL: `https://jstfqdoefjfqfwgppmxh.supabase.co`. Publishable key: `sb_pu
 
 ## 2. API on Render
 
-1. **New → Blueprint**, pick this repository. It reads [`render.yaml`](../render.yaml), which deploys from `main`. Change `branch` to try another branch first.
+1. **New → Blueprint**, pick this repository. It reads [`render.yaml`](../render.yaml), which deploys from `staging`.
 2. Fill in the secrets when prompted:
 
 | Variable | Value |
@@ -48,7 +67,7 @@ Migrations run at container start. **The app refuses to start if the config is u
 | Setting | Value |
 |---|---|
 | Root directory | `frontend` |
-| Production branch | The branch Render deploys |
+| Production branch | `main` |
 | `VITE_API_BASE_URL` | Your Render URL |
 | `VITE_SUPABASE_URL` | `https://jstfqdoefjfqfwgppmxh.supabase.co` |
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | The publishable key above, **never** the secret key |
