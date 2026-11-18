@@ -176,19 +176,6 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
 .close-mark { width: 88px; }
 .close h2 { max-width: 16em; font-size: var(--t-head); }
 .close em { color: var(--munim); }
-.access { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; width: min(560px, 100%); text-align: left; }
-.field { display: grid; gap: 6px; min-width: 0; }
-.field label { font-size: 15px; font-weight: 500; }
-.field label span { font-weight: 400; color: var(--graphite); }
-.field input { width: 100%; min-height: 48px; padding: 10px 14px; border: 1px solid #b9b5b2; border-radius: 12px; background: var(--paper); color: var(--ink); font: inherit; font-size: 17px; transition: border-color .2s var(--tap); }
-.field input:hover { border-color: var(--graphite); }
-.field input:focus-visible { outline: 3px solid var(--munim-deep); outline-offset: 1px; border-color: transparent; border-radius: 12px; }
-.field input[aria-invalid="true"] { border-color: #b42318; }
-.access .btn { grid-column: 1 / -1; }
-.status { grid-column: 1 / -1; min-height: 1.4em; font-size: 15px; line-height: 1.4; text-align: center; }
-.status.bad { color: #b42318; }
-.status.good { color: #05603a; }
-.fine { font-size: var(--t-cap); color: var(--graphite); }
 
 .foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 24px; padding: 20px var(--gutter); border-top: 1px solid var(--line); background: var(--mist); font-size: var(--t-cap); color: var(--graphite); }
 .foot strong { color: var(--ink); font-weight: 600; }
@@ -209,7 +196,7 @@ button { font: inherit; color: inherit; background: none; border: 0; padding: 0;
   .nav-link { display: none; }
 }
 @media (max-width: 520px) {
-  .bento, .access { grid-template-columns: minmax(0, 1fr); }
+  .bento { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-height: 640px) and (max-width: 860px) {
   .inv h2 { display: none; }

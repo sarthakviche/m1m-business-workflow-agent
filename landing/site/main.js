@@ -8,7 +8,7 @@
   var smooth = function (t) { return t * t * (3 - 2 * t); };
   var money = function (v) { return '₹' + v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
 
-  /* ---------- Demo dialog and access form work in every mode ---------- */
+  /* ---------- Demo dialog works in every mode ---------- */
 
   var dialog = $('filmDialog'), video = $('filmVideo');
   document.querySelectorAll('[data-film-open]').forEach(function (b) {
@@ -20,40 +20,6 @@
   $('filmClose').addEventListener('click', function () { dialog.close(); });
   dialog.addEventListener('click', function (e) { if (e.target === dialog) dialog.close(); });
   dialog.addEventListener('close', function () { video.pause(); });
-
-  var form = $('accessForm');
-  form.addEventListener('submit', function (e) {
-    e.preventDefault();
-    var email = form.elements.email, status = $('accessStatus'), button = form.querySelector('button');
-    var say = function (text, kind) { status.textContent = text; status.className = 'status ' + kind; };
-    email.value = email.value.trim();
-    if (!email.value || !email.validity.valid) {
-      email.setAttribute('aria-invalid', 'true');
-      say('Enter a valid email address, like name@yourbusiness.in.', 'bad');
-      email.focus();
-      return;
-    }
-    email.removeAttribute('aria-invalid');
-    var endpoint = form.dataset.endpoint;
-    if (!endpoint) {
-      // Nothing receives requests until data-endpoint is set. Never claim it was sent.
-      say("We're not taking requests just yet. Please check back soon.", 'bad');
-      return;
-    }
-    button.disabled = true;
-    say('Sending your request…', '');
-    fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-      body: JSON.stringify({ email: email.value, business: form.elements.business.value.trim() })
-    }).then(function (r) {
-      if (!r.ok) throw new Error(r.status);
-      form.reset();
-      say("Thanks. We'll reply to your email about access.", 'good');
-    }).catch(function () {
-      say("We couldn't send your request. Check your connection and try again.", 'bad');
-    }).then(function () { button.disabled = false; });
-  });
 
   /* ---------- Read-along words ---------- */
 
