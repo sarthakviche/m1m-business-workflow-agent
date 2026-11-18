@@ -1,11 +1,13 @@
 # Render Blueprint for the staging API. Secrets (sync: false) are entered in the dashboard.
-# Render deploys from the branch this Blueprint is linked to.
+# Deploys automatically from `staging`. Branch rules for every host: docs/DEPLOYMENT.md.
 # The frontend is on Vercel: see docs/DEPLOYMENT.md.
 services:
   - type: web
     name: munim-api-staging
     runtime: docker
     plan: free
+    branch: staging
+    autoDeploy: true
     region: singapore  # nearest to India, and to the Supabase Mumbai database
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
